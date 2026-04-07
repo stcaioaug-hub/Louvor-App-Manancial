@@ -27,6 +27,7 @@ export interface Song {
     lyrics?: string;
     video?: string;
   };
+  createdAt?: string;
 }
 
 export type EventType = 'service' | 'rehearsal';

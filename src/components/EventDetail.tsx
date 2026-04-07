@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   Edit2,
   LoaderCircle,
+  Eye,
+  Mic,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatFullDate } from '../lib/dateUtils';
@@ -38,7 +40,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { WorshipEvent, Song, TeamMember } from '../types';
+import { WorshipEvent, Song, TeamMember, Profile } from '../types';
 
 const STANDARD_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -82,6 +84,7 @@ interface EventDetailProps {
   onDeleteEvent?: () => void;
   events: WorshipEvent[];
   canEdit?: boolean;
+  userProfile?: Profile | null;
 }
 
 interface SortableSongItemProps {
@@ -94,9 +97,10 @@ interface SortableSongItemProps {
   type?: 'main' | 'offering' | 'outro';
   key?: string | number;
   index: number;
+  onExpand: (id: string) => void;
 }
 
-function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectSong, type, index }: SortableSongItemProps) {
+function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectSong, type, index, onExpand }: SortableSongItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style = {
@@ -120,33 +124,33 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 md:gap-4 p-3 md:p-4 border rounded-2xl shadow-sm hover:shadow-md transition-all group backdrop-blur-sm ${bgStyle} ${
-        isDragging ? 'shadow-2xl scale-[1.02]' : ''
+      onClick={() => !isEditing && onExpand(song.id)}
+      className={`flex items-center gap-4 p-4 md:p-5 border rounded-[1.5rem] shadow-sm hover:shadow-xl hover:scale-[1.01] transition-all group backdrop-blur-sm cursor-pointer ${bgStyle} ${
+        isDragging ? 'shadow-2xl scale-[1.05] rotate-1' : ''
       }`}
     >
       {isEditing && (
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500">
-          <GripVertical size={18} className="md:w-5 md:h-5" />
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-blue-500 p-2 -ml-2">
+          <GripVertical size={20} className="md:w-6 md:h-6" />
         </div>
       )}
 
-      <button
-        onClick={() => onSelectSong(song.id)}
-        className="flex-1 min-w-0 text-left hover:opacity-70 transition-opacity flex items-center gap-3"
-      >
-        <span className="text-[10px] font-black uppercase text-slate-400 bg-slate-100 px-2 py-1 rounded hidden sm:inline-block">
-          {index + 1}º Louvor
-        </span>
-        <span className="text-[10px] font-black text-slate-400 sm:hidden">
-          {index + 1}º
-        </span>
-        <div className="flex-1 min-w-0">
-          <h5 className="font-bold text-xs md:text-sm text-[#00153d] truncate">{song.title}</h5>
-          <p className="text-[9px] md:text-[10px] text-slate-500 font-medium truncate">{song.artist}</p>
+      <div className="flex-1 min-w-0 flex items-center gap-4">
+        <div className="flex flex-col items-center justify-center min-w-[40px] h-10 bg-slate-100/50 rounded-xl">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+            {index + 1}º
+          </span>
+          <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest -mt-1 hidden sm:block">
+            Pos
+          </span>
         </div>
-      </button>
+        <div className="flex-1 min-w-0">
+          <h5 className="font-headline font-bold text-sm md:text-base text-[#00153d] truncate group-hover:text-blue-600 transition-colors tracking-tight">{song.title}</h5>
+          <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate opacity-70 italic">{song.artist}</p>
+        </div>
+      </div>
 
-      <div className="flex items-center gap-1.5 md:gap-2">
+      <div className="flex items-center gap-1.5 md:gap-2" onClick={(e) => e.stopPropagation()}>
         <div className="text-[10px] md:text-xs font-bold text-blue-600 bg-blue-50 px-1.5 md:px-2 py-0.5 md:py-1 rounded">
           {song.key}
         </div>
@@ -167,15 +171,17 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-0.5 md:gap-1">
+          <div className="flex items-center gap-1 md:gap-2">
             {song.links.chords && (
               <a
                 href={song.links.chords}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1.5 md:p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                title="Cifra"
+                className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all"
               >
-                <ExternalLink size={14} className="md:w-4 md:h-4" />
+                <Music size={12} />
+                <span className="hidden lg:inline">Cifra</span>
               </a>
             )}
             {song.links.lyrics && (
@@ -183,11 +189,19 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
                 href={song.links.lyrics}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1.5 md:p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all"
+                title="Letra"
+                className="flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-all"
               >
-                <FileText size={14} className="md:w-4 md:h-4" />
+                <FileText size={12} />
+                <span className="hidden lg:inline">Letra</span>
               </a>
             )}
+            <button 
+              className="p-1.5 text-slate-300 group-hover:text-blue-400 transition-colors"
+              title="Expandir detalhes"
+            >
+              <Eye size={16} />
+            </button>
           </div>
         )}
       </div>
@@ -195,10 +209,11 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
   );
 }
 
-export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false }: EventDetailProps) {
+export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedEvent, setEditedEvent] = useState<WorshipEvent>({ ...event });
   const [editingSongMetadata, setEditingSongMetadata] = useState<Song | null>(null);
+  const [expandedSongId, setExpandedSongId] = useState<string | null>(null);
   const [showAddSongModal, setShowAddSongModal] = useState<'main' | 'offering' | 'outro' | null>(null);
   const [showAddTeamModal, setShowAddTeamModal] = useState<'vocal' | 'instrument' | null>(null);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -384,9 +399,9 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const nextEvent = currentIndex < sortedEvents.length - 1 ? sortedEvents[currentIndex + 1] : null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20">
-      <header className="flex flex-col sm:flex-row items-center justify-between gap-6">
-        <div className="flex items-center gap-4 w-full sm:w-auto">
+    <div className="max-w-4xl mx-auto space-y-8 pb-32">
+      <header className="flex flex-col gap-6">
+        <div className="flex items-center justify-between w-full">
           <BackButton onClick={onBack} />
           
           <div className="flex items-center gap-2">
@@ -409,137 +424,76 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          {canEdit && (
-            <>
-              {!isEditing ? (
-                <>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-[#00153d] rounded-2xl font-bold apple-shadow hover:bg-slate-50 transition-all"
-                  >
-                    <Edit2 size={18} />
-                    <span className="hidden sm:inline">Editar Detalhes</span>
-                    <span className="sm:hidden">Editar</span>
-                  </button>
-                  <button
-                    onClick={() => setShowAttendanceModal(true)}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#00153d] text-white rounded-2xl font-bold shadow-lg shadow-blue-900/10 hover:opacity-90 transition-all"
-                  >
-                    <CheckCircle2 size={18} />
-                    <span className="hidden sm:inline">Confirmar Presenca</span>
-                    <span className="sm:hidden">Confirmar</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      setEditedEvent({ ...event });
-                      setIsEditing(false);
-                    }}
-                    disabled={isSaving}
-                    className="flex-1 sm:flex-none px-6 py-3 bg-white text-slate-500 rounded-2xl font-bold apple-shadow hover:bg-slate-50 transition-all disabled:opacity-50"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={() => void handleSave()}
-                    disabled={isSaving}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/20 hover:opacity-90 transition-all disabled:opacity-50"
-                  >
-                    {isSaving ? <LoaderCircle size={18} className="animate-spin" /> : <Save size={18} />}
-                    <span>{isSaving ? 'Salvando...' : 'Salvar'}</span>
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </header>
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+               {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedEvent.title}
+                    onChange={(e) => setEditedEvent({ ...editedEvent, title: e.target.value })}
+                    className="text-4xl md:text-5xl font-headline font-extrabold text-[#00153d] tracking-tight w-full bg-white/50 border-none rounded-2xl focus:ring-2 focus:ring-blue-500/20 p-2"
+                  />
+                ) : (
+                  <h2 className="text-4xl md:text-5xl font-headline font-extrabold text-[#00153d] tracking-tight truncate">{editedEvent.title}</h2>
+                )}
+            </div>
+            <div
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest self-start mt-2 ${
+                editedEvent.type === 'service' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'
+              }`}
+            >
+              {editedEvent.type === 'service' ? 'Culto' : 'Ensaio'}
+            </div>
+          </div>
 
-      <div className="bg-white rounded-[2.5rem] p-8 apple-shadow space-y-10">
-        <section className="space-y-6">
-          <div className="flex items-start justify-between">
-            <div className="space-y-2 flex-1">
+          <div className="flex flex-wrap gap-2 md:gap-4">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/60 backdrop-blur-md rounded-2xl border border-white/40 shadow-sm">
+              <CalendarIcon size={16} className="text-blue-500" />
+              {isEditing ? (
+                <input
+                  type="date"
+                  value={editedEvent.date}
+                  onChange={(e) => setEditedEvent({ ...editedEvent, date: e.target.value })}
+                  className="text-xs font-bold text-[#00153d] bg-transparent border-none p-0 w-28"
+                />
+              ) : (
+                <span className="text-xs font-bold text-[#00153d]">{formatDate(editedEvent.date)}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/60 backdrop-blur-md rounded-2xl border border-white/40 shadow-sm">
+              <Clock size={16} className="text-blue-500" />
+              {isEditing ? (
+                <input
+                  type="time"
+                  value={editedEvent.time}
+                  onChange={(e) => setEditedEvent({ ...editedEvent, time: e.target.value })}
+                  className="text-xs font-bold text-[#00153d] bg-transparent border-none p-0 w-16"
+                />
+              ) : (
+                <span className="text-xs font-bold text-[#00153d]">{editedEvent.time}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/60 backdrop-blur-md rounded-2xl border border-white/40 shadow-sm">
+              <MapPin size={16} className="text-blue-500" />
               {isEditing ? (
                 <input
                   type="text"
-                  value={editedEvent.title}
-                  onChange={(eventTarget) => setEditedEvent({ ...editedEvent, title: eventTarget.target.value })}
-                  className="text-4xl font-headline font-extrabold text-[#00153d] tracking-tight w-full bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-500/20 p-2"
+                  value={editedEvent.location || ''}
+                  onChange={(e) => setEditedEvent({ ...editedEvent, location: e.target.value })}
+                  placeholder="Local..."
+                  className="text-xs font-bold text-[#00153d] bg-transparent border-none p-0 w-24"
                 />
               ) : (
-                <h2 className="text-4xl font-headline font-extrabold text-[#00153d] tracking-tight">{editedEvent.title}</h2>
+                <span className="text-xs font-bold text-[#00153d]">{editedEvent.location || 'Manancial'}</span>
               )}
-              <div
-                className={`inline-block px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest ${
-                  editedEvent.type === 'service' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'
-                }`}
-              >
-                {editedEvent.type === 'service' ? 'Culto' : 'Ensaio'}
-              </div>
             </div>
           </div>
+        </div>
+      </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 apple-shadow">
-                <CalendarIcon size={20} />
-              </div>
-              <div className="flex-1">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data</p>
-                {isEditing ? (
-                  <input
-                    type="date"
-                    value={editedEvent.date}
-                    onChange={(eventTarget) => setEditedEvent({ ...editedEvent, date: eventTarget.target.value })}
-                    className="text-sm font-bold text-[#00153d] bg-transparent border-none p-0 w-full"
-                  />
-                ) : (
-                  <p className="text-sm font-bold text-[#00153d] capitalize">{formatDate(editedEvent.date)}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 apple-shadow">
-                <Clock size={20} />
-              </div>
-              <div className="flex-1">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Horario</p>
-                {isEditing ? (
-                  <input
-                    type="time"
-                    value={editedEvent.time}
-                    onChange={(eventTarget) => setEditedEvent({ ...editedEvent, time: eventTarget.target.value })}
-                    className="text-sm font-bold text-[#00153d] bg-transparent border-none p-0 w-full"
-                  />
-                ) : (
-                  <p className="text-sm font-bold text-[#00153d]">{editedEvent.time}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 apple-shadow">
-                <MapPin size={20} />
-              </div>
-              <div className="flex-1">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Local</p>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={editedEvent.location || ''}
-                    onChange={(eventTarget) => setEditedEvent({ ...editedEvent, location: eventTarget.target.value })}
-                    placeholder="Local do evento..."
-                    className="text-sm font-bold text-[#00153d] bg-transparent border-none p-0 w-full"
-                  />
-                ) : (
-                  <p className="text-sm font-bold text-[#00153d]">{editedEvent.location || 'Igreja Manancial'}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
+      <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-10 apple-shadow border border-white/40 space-y-12">
+        {/* Repertoire Content */}
 
         <section className="space-y-6">
           <div className="flex items-center justify-between">
@@ -558,18 +512,19 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             )}
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(eventTarget) => handleDragEnd(eventTarget, 'main')}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'main')}>
             <SortableContext items={editedEvent.songs} strategy={verticalListSortingStrategy}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {editedEvent.songs.map((songId, index) => (
                   <SortableSongItem
                     key={songId}
                     id={songId}
-                    song={songs.find((song) => song.id === songId)}
-                    isEditing={isEditing || canEdit}
+                    song={songs.find((s) => s.id === songId)}
+                    isEditing={isEditing}
                     onRemove={() => removeSong(songId, 'main')}
                     onEditSong={setEditingSongMetadata}
                     onSelectSong={onSelectSong}
+                    onExpand={setExpandedSongId}
                     type="main"
                     index={index}
                   />
@@ -585,7 +540,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Music size={24} className="text-emerald-600" />
               Momento da Oferta
             </h3>
-            {(isEditing || canEdit) && (
+            {(isEditing || (canEdit && userProfile?.name === 'Caio')) && (
               <button
                 onClick={() => setShowAddSongModal('offering')}
                 className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:bg-emerald-50 px-4 py-2 rounded-xl transition-all"
@@ -596,25 +551,26 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             )}
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(eventTarget) => handleDragEnd(eventTarget, 'offering')}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'offering')}>
             <SortableContext items={editedEvent.offeringSongs || []} strategy={verticalListSortingStrategy}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(editedEvent.offeringSongs || []).map((songId, index) => (
                   <SortableSongItem
                     key={songId}
                     id={songId}
-                    song={songs.find((song) => song.id === songId)}
-                    isEditing={isEditing || canEdit}
+                    song={songs.find((s) => s.id === songId)}
+                    isEditing={isEditing}
                     onRemove={() => removeSong(songId, 'offering')}
                     onEditSong={setEditingSongMetadata}
                     onSelectSong={onSelectSong}
+                    onExpand={setExpandedSongId}
                     type="offering"
                     index={index}
                   />
                 ))}
                 {(!editedEvent.offeringSongs || editedEvent.offeringSongs.length === 0) && !isEditing && (
-                  <div className="col-span-full p-8 border-2 border-dashed border-slate-100 rounded-[2rem] flex flex-col items-center justify-center text-slate-300 bg-slate-50/50">
-                    <p className="text-sm font-bold uppercase tracking-widest">Nenhum louvor de oferta definido</p>
+                  <div className="col-span-full p-8 border-2 border-dashed border-slate-200/50 rounded-[2rem] flex flex-col items-center justify-center text-slate-300 bg-slate-50/30">
+                    <p className="text-xs font-bold uppercase tracking-widest">Nenhum louvor de oferta</p>
                   </div>
                 )}
               </div>
@@ -628,7 +584,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Music size={24} className="text-purple-600" />
               Louvores para o Final
             </h3>
-            {(isEditing || canEdit) && (
+            {(isEditing || (canEdit && userProfile?.name === 'Caio')) && (
               <button
                 onClick={() => setShowAddSongModal('outro')}
                 className="flex items-center gap-2 text-purple-600 font-bold text-sm hover:bg-purple-50 px-4 py-2 rounded-xl transition-all"
@@ -639,25 +595,26 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             )}
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(eventTarget) => handleDragEnd(eventTarget, 'outro')}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'outro')}>
             <SortableContext items={editedEvent.outroSongs || []} strategy={verticalListSortingStrategy}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(editedEvent.outroSongs || []).map((songId, index) => (
                   <SortableSongItem
                     key={songId}
                     id={songId}
-                    song={songs.find((song) => song.id === songId)}
-                    isEditing={isEditing || canEdit}
+                    song={songs.find((s) => s.id === songId)}
+                    isEditing={isEditing}
                     onRemove={() => removeSong(songId, 'outro')}
                     onEditSong={setEditingSongMetadata}
                     onSelectSong={onSelectSong}
+                    onExpand={setExpandedSongId}
                     type="outro"
                     index={index}
                   />
                 ))}
                 {(!editedEvent.outroSongs || editedEvent.outroSongs.length === 0) && !isEditing && (
-                  <div className="col-span-full p-8 border-2 border-dashed border-slate-100 rounded-[2rem] flex flex-col items-center justify-center text-slate-300 bg-slate-50/50">
-                    <p className="text-sm font-bold uppercase tracking-widest">Nenhum louvor final definido</p>
+                  <div className="col-span-full p-8 border-2 border-dashed border-slate-200/50 rounded-[2rem] flex flex-col items-center justify-center text-slate-300 bg-slate-50/30">
+                    <p className="text-xs font-bold uppercase tracking-widest">Nenhum louvor final</p>
                   </div>
                 )}
               </div>
@@ -745,7 +702,142 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
         </section>
       </div>
 
+      <div className="fixed bottom-0 left-0 right-0 p-6 z-[90] pointer-events-none">
+        <div className="max-w-4xl mx-auto flex gap-4 pointer-events-auto">
+          {!isEditing ? (
+            <>
+              <button
+                onClick={() => setShowAttendanceModal(true)}
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-[#00153d] text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all active:scale-95"
+              >
+                <CheckCircle2 size={20} />
+                <span>Confirmar Presença</span>
+              </button>
+              {(canEdit && userProfile?.name === 'Caio') && (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-white text-[#00153d] rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all active:scale-95 border border-black/5"
+                >
+                  <Edit2 size={20} />
+                  <span>Editar Detalhes</span>
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setEditedEvent({ ...event });
+                  setIsEditing(false);
+                }}
+                disabled={isSaving}
+                className="flex-1 px-6 py-4 bg-white text-slate-500 rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all disabled:opacity-50 active:scale-95 border border-black/5"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all disabled:opacity-50 active:scale-95"
+              >
+                {isSaving ? <LoaderCircle size={20} className="animate-spin" /> : <Save size={20} />}
+                <span>{isSaving ? 'Salvando...' : 'Salvar Alterações'}</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       <AnimatePresence>
+        {expandedSongId && (() => {
+          const song = songs.find(s => s.id === expandedSongId);
+          if (!song) return null;
+          const leadVocal = editedEvent.team.vocal[0] || 'A definir';
+
+          return (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white rounded-[3rem] w-full max-w-lg overflow-hidden apple-shadow relative"
+              >
+                <button 
+                  onClick={() => setExpandedSongId(null)}
+                  className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors z-10"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="p-10 space-y-8">
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">Detalhes do Louvor</p>
+                    <h3 className="text-3xl font-headline font-extrabold text-[#00153d] leading-tight">{song.title}</h3>
+                    <p className="text-slate-500 font-medium">{song.artist}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-6 bg-blue-50 rounded-[2rem] space-y-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Tom Principal</p>
+                      <p className="text-3xl font-headline font-black text-blue-700">{song.key}</p>
+                    </div>
+                    <div className="p-6 bg-slate-50 rounded-[2rem] space-y-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vocal Principal</p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Mic size={16} className="text-slate-400" />
+                        <p className="text-lg font-bold text-[#00153d] truncate">{leadVocal}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {song.links.chords && (
+                      <a
+                        href={song.links.chords}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-between p-6 bg-[#00153d] text-white rounded-[2rem] font-bold hover:opacity-90 transition-all group scale-active"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
+                            <Music size={20} />
+                          </div>
+                          <span>Acessar Cifra Club</span>
+                        </div>
+                        <ExternalLink size={18} className="opacity-40 group-hover:opacity-100 transition-opacity" />
+                      </a>
+                    )}
+                    {song.links.lyrics && (
+                      <a
+                        href={song.links.lyrics}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-between p-6 bg-emerald-600 text-white rounded-[2rem] font-bold hover:opacity-90 transition-all group scale-active"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
+                            <FileText size={20} />
+                          </div>
+                          <span>Ver Letra Completa</span>
+                        </div>
+                        <ExternalLink size={18} className="opacity-40 group-hover:opacity-100 transition-opacity" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-8 bg-slate-50 flex justify-center">
+                   <button
+                    onClick={() => setExpandedSongId(null)}
+                    className="px-12 py-4 bg-white text-[#00153d] rounded-2xl font-bold apple-shadow hover:bg-slate-100 transition-all"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
         {editingSongMetadata && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <motion.div

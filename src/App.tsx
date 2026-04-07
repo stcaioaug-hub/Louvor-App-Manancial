@@ -21,6 +21,7 @@ import Login from './components/Login';
 import Settings from './components/Settings';
 import Insights from './components/Insights';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import NewSongs from './components/NewSongs';
 import { supabase } from './lib/supabase';
 import { getProfile, signOut } from './lib/auth';
 import {
@@ -424,6 +425,7 @@ export default function App() {
           onSelectEvent={setSelectedEventId}
           onDeleteEvent={() => handleDeleteEvent(selectedEvent.id)}
           canEdit={isMinister}
+          userProfile={effectiveProfile}
         />
       );
     }
@@ -484,6 +486,15 @@ export default function App() {
             onUpdateMember={handleUpdateMember}
             onDeleteMember={handleDeleteMember}
             canEdit={isMinister}
+            onBack={() => setActiveTab('dashboard')}
+          />
+        );
+      case 'new-songs':
+        return (
+          <NewSongs
+            songs={songs}
+            events={events}
+            onSelectSong={setSelectedSongId}
             onBack={() => setActiveTab('dashboard')}
           />
         );
@@ -551,6 +562,7 @@ export default function App() {
         userProfile={effectiveProfile}
         isSidebarHidden={isSidebarHidden}
         setIsSidebarHidden={setIsSidebarHidden}
+        showMobileNav={!selectedEvent && !selectedSong}
       />
 
       {isSidebarHidden && (
@@ -638,16 +650,6 @@ export default function App() {
         )}
       </main>
 
-      {isMinister && (
-        <div className="md:hidden fixed bottom-28 right-6 z-50">
-          <button
-            onClick={() => setActiveTab('repertoire')}
-            className="w-16 h-16 bg-[#00153d] text-white rounded-[2rem] shadow-2xl flex items-center justify-center active:scale-90 transition-all hover:scale-105 border-4 border-white/50 backdrop-blur-md"
-          >
-            <PlusCircle size={32} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

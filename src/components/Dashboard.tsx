@@ -21,7 +21,7 @@ export default function Dashboard({ setActiveTab, songs, team, events, onSelectE
     { label: 'Louvores ativos', value: songs.length.toString(), icon: Music, color: 'from-blue-600 to-blue-400', shadow: 'shadow-blue-500/10', tab: 'repertoire' },
     { label: 'Integrantes', value: team.length.toString(), icon: Users, color: 'from-blue-500 to-cyan-400', shadow: 'shadow-blue-500/10', tab: 'team' },
     { label: 'Eventos mensais', value: events.length.toString(), icon: CalendarIcon, color: 'from-cyan-500 to-blue-400', shadow: 'shadow-cyan-500/10', tab: 'schedule' },
-    { label: 'Novos louvores', value: '+5', icon: TrendingUp, color: 'from-[#00153d] to-blue-800', shadow: 'shadow-blue-900/10', tab: 'repertoire' },
+    { label: 'Novos louvores', value: '+5', icon: TrendingUp, color: 'from-[#00153d] to-blue-800', shadow: 'shadow-blue-900/10', tab: 'new-songs' },
   ];
 
   const formatDate = (dateStr: string) => formatDashboardDate(dateStr);

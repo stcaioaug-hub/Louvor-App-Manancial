@@ -9,7 +9,8 @@ import {
   PlusCircle,
   Clock,
   PanelLeftClose,
-  TrendingUp
+  TrendingUp,
+  Sparkles
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -22,12 +23,22 @@ interface SidebarProps {
   userProfile: Profile | null;
   isSidebarHidden: boolean;
   setIsSidebarHidden: (hidden: boolean) => void;
+  showMobileNav?: boolean;
 }
 
-export default function Sidebar({ activeTab, setActiveTab, onSignOut, userProfile, isSidebarHidden, setIsSidebarHidden }: SidebarProps) {
+export default function Sidebar({ 
+  activeTab, 
+  setActiveTab, 
+  onSignOut, 
+  userProfile, 
+  isSidebarHidden, 
+  setIsSidebarHidden,
+  showMobileNav = true
+}: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'insights', label: 'Insights', icon: TrendingUp },
+    { id: 'new-songs', label: 'Novidades', icon: Sparkles },
     { id: 'repertoire', label: 'Repertório', icon: Music2 },
     { id: 'schedule', label: 'Programação', icon: Calendar },
     { id: 'team', label: 'Equipe', icon: Users },
@@ -126,37 +137,39 @@ export default function Sidebar({ activeTab, setActiveTab, onSignOut, userProfil
       )}
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 h-20 glass rounded-[2rem] flex items-center justify-around px-4 z-[100] border border-white/50 shadow-2xl">
-        {menuItems.map((item) => (
+      {showMobileNav && (
+        <nav className="md:hidden fixed bottom-4 left-4 right-4 h-20 glass rounded-[2rem] flex items-center justify-around px-4 z-[100] border border-white/50 shadow-2xl">
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`flex flex-col items-center gap-1 transition-all duration-300 relative ${
+                activeTab === item.id ? 'text-[#00153d]' : 'text-slate-400'
+              }`}
+            >
+              <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'bg-[#00153d] text-white shadow-lg scale-110' : 'hover:bg-white/50'}`}>
+                <item.icon size={22} />
+              </div>
+              {activeTab === item.id && (
+                <motion.div 
+                  layoutId="activeTabMobile"
+                  className="absolute -top-3 w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                />
+              )}
+            </button>
+          ))}
           <button
-            key={item.id}
-            onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 relative ${
-              activeTab === item.id ? 'text-[#00153d]' : 'text-slate-400'
+            onClick={() => setActiveTab('settings')}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${
+              activeTab === 'settings' ? 'text-[#00153d]' : 'text-slate-400'
             }`}
           >
-            <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'bg-[#00153d] text-white shadow-lg scale-110' : 'hover:bg-white/50'}`}>
-              <item.icon size={22} />
+            <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'settings' ? 'bg-[#00153d] text-white shadow-lg scale-110' : 'hover:bg-white/50'}`}>
+              <Settings size={22} />
             </div>
-            {activeTab === item.id && (
-              <motion.div 
-                layoutId="activeTabMobile"
-                className="absolute -top-3 w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-              />
-            )}
           </button>
-        ))}
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`flex flex-col items-center gap-1 transition-all duration-300 ${
-            activeTab === 'settings' ? 'text-[#00153d]' : 'text-slate-400'
-          }`}
-        >
-          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'settings' ? 'bg-[#00153d] text-white shadow-lg scale-110' : 'hover:bg-white/50'}`}>
-            <Settings size={22} />
-          </div>
-        </button>
-      </nav>
+        </nav>
+      )}
     </>
   );
 }

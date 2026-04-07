@@ -11,15 +11,19 @@ import {
   ArrowLeft,
   Sparkles,
   Guitar,
-  Speaker
+  Speaker,
+  Lock,
+  Mail,
+  ShieldCheck
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface OnboardingWizardProps {
   profile: Profile;
   onComplete: (updatedProfile: Profile) => void;
 }
 
-type Step = 'welcome' | 'role' | 'instrument' | 'personalize' | 'loading';
+type Step = 'welcome' | 'role' | 'instrument' | 'personalize' | 'security' | 'loading';
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onComplete }) => {
   const [step, setStep] = useState<Step>('welcome');
@@ -28,7 +32,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
     instrument: '',
     name: profile.name || ''
   });
+  const [securityData, setSecurityData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const roles = [
     { id: 'vocal', name: 'Vocal', icon: Mic, description: 'Ministre com sua voz' },
@@ -65,7 +75,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
     setStep('loading');
 
     try {
-      const { data, error } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .update({
           functional_role: formData.functional_role,
@@ -77,13 +87,30 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
         .select()
         .single();
 
-      if (error) throw error;
-      onComplete(data as Profile);
-    } catch (err) {
-      console.error('Error updating profile:', err);
-      setStep('personalize');
+      if (profileError) throw profileError;
+
+      // Update credentials if provided
+      if (securityData.email || securityData.password) {
+        const updateParams: any = {};
+        if (securityData.email && securityData.email !== '') updateParams.email = securityData.email;
+        if (securityData.password && securityData.password !== '') updateParams.password = securityData.password;
+
+        const { error: authError } = await supabase.auth.updateUser(updateParams);
+        if (authError) throw authError;
+      }
+
+      onComplete(profileData as Profile);
+    } catch (err: any) {
+      console.error('Error during onboarding:', err);
+      setError(err.message || 'Ocorreu um erro ao salvar as configurações.');
+      setStep('security');
       setIsLoading(false);
     }
+  };
+
+  const handleNextFromPersonalize = () => {
+    if (!formData.name.trim()) return;
+    setStep('security');
   };
 
   return (
@@ -95,10 +122,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
           <div 
             className="h-full bg-gradient-to-r from-manancial-blue to-manancial-teal transition-all duration-500 ease-out"
             style={{ 
-              width: step === 'welcome' ? '25%' : 
-                     step === 'role' ? '50%' : 
-                     step === 'instrument' ? '75%' : 
-                     step === 'personalize' ? '90%' : '100%' 
+              width: step === 'welcome' ? '20%' : 
+                     step === 'role' ? '40%' : 
+                     step === 'instrument' ? '60%' : 
+                     step === 'personalize' ? '80%' : 
+                     step === 'security' ? '95%' : '100%' 
             }}
           />
         </div>
@@ -233,13 +261,118 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
                 </div>
 
                 <button
-                  onClick={handleSubmit}
+                  onClick={handleNextFromPersonalize}
                   disabled={!formData.name.trim() || isLoading}
                   className="w-full py-4 bg-gradient-to-r from-manancial-blue to-manancial-teal text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
                 >
-                  Finalizar Configuração
+                  Continuar
                   <ChevronRight className="w-5 h-5" />
                 </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'security' && (
+            <div className="animate-in slide-in-from-right-4 duration-500">
+              <button 
+                onClick={() => setStep('personalize')}
+                className="flex items-center gap-1 text-slate-400 hover:text-slate-600 mb-6 transition-colors"
+                disabled={isLoading}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </button>
+              <h2 className="text-2xl font-headline font-bold text-slate-800 mb-2">
+                Segurança da Conta
+              </h2>
+              <p className="text-slate-500 mb-8">Personalize seu login. Você pode alterar seu e-mail e definir uma senha pessoal.</p>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Novo E-mail (Opcional)</label>
+                  <div className="relative group">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-manancial-blue transition-colors" size={20} />
+                    <input
+                      type="email"
+                      value={securityData.email}
+                      onChange={(e) => setSecurityData({ ...securityData, email: e.target.value })}
+                      placeholder="seu@email.com"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-4 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Nova Senha</label>
+                    <div className="relative group">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-manancial-blue transition-colors" size={20} />
+                      <input
+                        type="password"
+                        value={securityData.password}
+                        onChange={(e) => setSecurityData({ ...securityData, password: e.target.value })}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-4 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Confirmar Senha</label>
+                    <div className="relative group">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-manancial-blue transition-colors" size={20} />
+                      <input
+                        type="password"
+                        value={securityData.confirmPassword}
+                        onChange={(e) => setSecurityData({ ...securityData, confirmPassword: e.target.value })}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-4 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {securityData.password && securityData.password.length < 6 && (
+                  <p className="text-xs text-amber-600 font-bold ml-1">A senha deve ter pelo menos 6 caracteres.</p>
+                )}
+
+                {securityData.password !== securityData.confirmPassword && securityData.confirmPassword !== '' && (
+                  <p className="text-xs text-red-500 font-bold ml-1">As senhas não coincidem.</p>
+                )}
+
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm font-medium flex items-center gap-3"
+                  >
+                    <ShieldCheck size={18} className="shrink-0" />
+                    {error}
+                  </motion.div>
+                )}
+
+                <div className="pt-4">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={
+                      isLoading || 
+                      (securityData.password !== securityData.confirmPassword) || 
+                      (securityData.password !== '' && securityData.password.length < 6)
+                    }
+                    className="w-full py-4 bg-manancial-dark text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
+                  >
+                    {isLoading ? (
+                      <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        Finalizar Configuração
+                        <Check className="w-5 h-5" />
+                      </>
+                    )}
+                  </button>
+                  <p className="text-center mt-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    Ao clicar em finalizar, sua conta será atualizada e você será redirecionado.
+                  </p>
+                </div>
               </div>
             </div>
           )}

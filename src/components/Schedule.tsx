@@ -34,7 +34,7 @@ interface ScheduleProps {
 }
 
 export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, onUpdateEvent, canEdit, onBack }: ScheduleProps) {
-  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const [view, setView] = useState<'list' | 'calendar'>('calendar');
   const [filter, setFilter] = useState<'all' | 'rehearsal'>('all');
   const [showWizard, setShowWizard] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());

@@ -21,6 +21,7 @@ interface SongRow {
   chords_url: string | null;
   lyrics_url: string | null;
   video_url: string | null;
+  created_at: string | null;
 }
 
 interface TeamMemberRow {
@@ -171,6 +172,7 @@ function mapSongRow(row: SongRow): Song {
       lyrics: row.lyrics_url ?? undefined,
       video: row.video_url ?? undefined,
     },
+    createdAt: row.created_at ?? undefined,
   };
 }
 
