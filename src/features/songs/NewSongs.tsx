@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Music, TrendingUp, Star, ExternalLink, FileText, Play, Clock, Sparkles } from 'lucide-react';
-import { Song, WorshipEvent } from '../types';
-import { BackButton } from './BackButton';
+import { Song, WorshipEvent } from '../../types';
+import { BackButton } from '../../components/BackButton';
 
 interface NewSongsProps {
   songs: Song[];

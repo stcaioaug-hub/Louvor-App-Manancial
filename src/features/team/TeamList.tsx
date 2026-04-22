@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Star, Mic2, Guitar, Drum, Piano, Plus, X, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TeamMember } from '../types';
-import { BackButton } from './BackButton';
+import { TeamMember } from '../../types';
+import { BackButton } from '../../components/BackButton';
 
 interface TeamListProps {
   team: TeamMember[];

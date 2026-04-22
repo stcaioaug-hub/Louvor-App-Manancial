@@ -1,5 +1,5 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { Song, TeamMember, WorshipEvent } from '../types';
+import { Song, TeamMember, WorshipEvent, RehearsalReport } from '../types';
 import { isConfigured, supabase, supabaseConfigMessage } from './supabase';
 import { INITIAL_EVENTS, INITIAL_SONGS, INITIAL_TEAM } from './seedData';
 
@@ -22,6 +22,8 @@ interface SongRow {
   lyrics_url: string | null;
   video_url: string | null;
   created_at: string | null;
+  times_played: number | null;
+  times_rehearsed: number | null;
 }
 
 interface TeamMemberRow {
@@ -45,6 +47,18 @@ interface WorshipEventRow {
   attendance: unknown;
 }
 
+interface RehearsalReportRow {
+  id: string;
+  date: string;
+  minister_id: string | null;
+  event_id: string | null;
+  songs_ids: string[];
+  attendance: unknown;
+  sentiment: string | null;
+  observations: string | null;
+  created_at: string | null;
+}
+
 interface EventSongRow {
   event_id: string;
   song_id: string;
@@ -57,6 +71,7 @@ interface AppData {
   songs: Song[];
   team: TeamMember[];
   events: WorshipEvent[];
+  rehearsalReports: RehearsalReport[];
 }
 
 export type AppDataSubscription = RealtimeChannel | null;
@@ -98,6 +113,7 @@ function cloneAppData(data: AppData): AppData {
     songs: data.songs.map(cloneSong),
     team: data.team.map(cloneTeamMember),
     events: data.events.map(cloneEvent),
+    rehearsalReports: [...(data.rehearsalReports || [])],
   };
 }
 
@@ -172,6 +188,8 @@ function mapSongRow(row: SongRow): Song {
       lyrics: row.lyrics_url ?? undefined,
       video: row.video_url ?? undefined,
     },
+    timesPlayed: row.times_played ?? 0,
+    timesRehearsed: row.times_rehearsed ?? 0,
     createdAt: row.created_at ?? undefined,
   };
 }
@@ -205,6 +223,8 @@ function mapSongToRow(song: Song | SongDraft) {
     chords_url: song.links.chords?.trim() || null,
     lyrics_url: song.links.lyrics?.trim() || null,
     video_url: song.links.video?.trim() || null,
+    times_played: song.timesPlayed ?? 0,
+    times_rehearsed: song.timesRehearsed ?? 0,
   };
 }
 
@@ -264,6 +284,7 @@ function createInitialLocalData(): AppData {
     songs: sortSongs(INITIAL_SONGS.map(cloneSong)),
     team: sortTeam(INITIAL_TEAM.map(cloneTeamMember)),
     events: sortEvents(INITIAL_EVENTS.map(cloneEvent)),
+    rehearsalReports: [],
   };
 }
 
@@ -286,11 +307,12 @@ export async function fetchAppData(): Promise<AppData> {
     return cloneAppData(localData);
   }
 
-  const [songsResult, teamResult, eventsResult, eventSongsResult] = await Promise.all([
+  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult] = await Promise.all([
     supabase.from('songs').select('*').order('title', { ascending: true }),
     supabase.from('team_members').select('*').order('name', { ascending: true }),
     supabase.from('worship_events').select('*').order('date', { ascending: true }).order('time', { ascending: true }),
     supabase.from('event_songs').select('event_id, song_id, is_outro, is_offering, position').order('position', { ascending: true }),
+    supabase.from('rehearsal_reports').select('*').order('date', { ascending: false }),
   ]);
 
   assertNoError(songsResult.error);
@@ -337,7 +359,19 @@ export async function fetchAppData(): Promise<AppData> {
     })
   );
 
-  return { songs, team, events };
+  const rehearsalReports = (reportsResult.data ?? []).map((row: RehearsalReportRow) => ({
+    id: row.id,
+    date: row.date,
+    minister_id: row.minister_id ?? undefined,
+    event_id: row.event_id ?? undefined,
+    songs_ids: row.songs_ids,
+    attendance: normalizeAttendance(row.attendance),
+    sentiment: row.sentiment ?? '',
+    observations: row.observations ?? '',
+    created_at: row.created_at ?? undefined,
+  }));
+
+  return { songs, team, events, rehearsalReports };
 }
 
 export async function createSong(song: SongDraft): Promise<Song> {
@@ -474,7 +508,7 @@ export async function createEvent(event: WorshipEventDraft): Promise<WorshipEven
   if (!isConfigured) {
     const createdEvent: WorshipEvent = {
       id: createLocalId('event'),
-      ...cloneEvent(event as WorshipEvent), // cloneEvent expects WorshipEvent but Draft is close enough if we bypass type
+      ...cloneEvent(event as WorshipEvent),
     };
     createdEvent.id = createLocalId('event'); // safety
 
@@ -486,25 +520,35 @@ export async function createEvent(event: WorshipEventDraft): Promise<WorshipEven
     return cloneEvent(createdEvent);
   }
 
-  const result = await supabase
+  // Insert event
+  const { data: insertedData, error: eventError } = await supabase
     .from('worship_events')
     .insert(mapEventToRow(event as WorshipEvent))
-    .select('*')
+    .select()
     .single();
-  assertNoError(result.error);
 
-  const createdId = (result.data as WorshipEventRow).id;
+  if (eventError) {
+    console.error('Error creating event:', eventError);
+    throw eventError;
+  }
 
-  // We map the songs manually
+  const createdId = (insertedData as WorshipEventRow).id;
+
+  // Final event object to return
   const createdEvent: WorshipEvent = {
     ...event,
     id: createdId,
   };
 
+  // Insert songs associations
   const payload = buildEventSongsPayload(createdEvent);
   if (payload.length > 0) {
-    const insertResult = await supabase.from('event_songs').insert(payload);
-    assertNoError(insertResult.error);
+    const { error: songsError } = await supabase.from('event_songs').insert(payload);
+    if (songsError) {
+      console.error('Error inserting event songs:', songsError);
+      // We don't throw here to ensure the event stays created, 
+      // but the user might need to know.
+    }
   }
 
   return createdEvent;
@@ -568,6 +612,50 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
     outroSongs: [...(event.outroSongs ?? [])],
     team: normalizeTeam(event.team),
     attendance: normalizeAttendance(event.attendance),
+  };
+}
+
+export async function createRehearsalReport(report: Omit<RehearsalReport, 'id'>): Promise<RehearsalReport> {
+  if (!isConfigured) {
+    const createdReport: RehearsalReport = {
+      id: createLocalId('report'),
+      ...report,
+    };
+    localData = {
+      ...localData,
+      rehearsalReports: [createdReport, ...localData.rehearsalReports],
+    };
+    return createdReport;
+  }
+
+  // Note: Song counters (times_rehearsed) are updated via a DB trigger on rehearsal_reports.
+
+  const result = await supabase
+    .from('rehearsal_reports')
+    .insert({
+      date: report.date,
+      minister_id: report.minister_id || null,
+      event_id: report.event_id || null,
+      songs_ids: report.songs_ids,
+      attendance: report.attendance,
+      sentiment: report.sentiment,
+      observations: report.observations,
+    })
+    .select('*')
+    .single();
+
+  assertNoError(result.error);
+  const row = result.data as RehearsalReportRow;
+  return {
+    id: row.id,
+    date: row.date,
+    minister_id: row.minister_id ?? undefined,
+    event_id: row.event_id ?? undefined,
+    songs_ids: row.songs_ids,
+    attendance: normalizeAttendance(row.attendance),
+    sentiment: row.sentiment ?? '',
+    observations: row.observations ?? '',
+    created_at: row.created_at ?? undefined,
   };
 }
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Profile } from '../types';
-import { updateProfile } from '../lib/auth';
+import { Profile } from '../../types';
+import { updateProfile } from '../../lib/auth';
 import { 
   User, 
   Mail, 
@@ -12,7 +12,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { BackButton } from './BackButton';
+import { BackButton } from '../../components/BackButton';
 
 interface SettingsProps {
   profile: Profile | null;

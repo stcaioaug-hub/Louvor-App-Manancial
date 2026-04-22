@@ -12,20 +12,22 @@ import {
   Star,
   Zap,
   TrendingUp,
+  Mic2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { BackButton } from './BackButton';
-import { Song, WorshipEvent } from '../types';
-import { formatFullDate, parseLocalDate } from '../lib/dateUtils';
+import { BackButton } from '../../components/BackButton';
+import { Song, WorshipEvent } from '../../types';
+import { formatFullDate, parseLocalDate } from '../../lib/dateUtils';
 
 interface SongDetailProps {
   song: Song;
   events: WorshipEvent[];
   onBack: () => void;
   onUpdateSong: (song: Song) => Promise<void>;
+  canEdit?: boolean;
 }
 
-export default function SongDetail({ song, events, onBack, onUpdateSong }: SongDetailProps) {
+export default function SongDetail({ song, events, onBack, onUpdateSong, canEdit = true }: SongDetailProps) {
   const songHistory = events
     .filter((event) => event.songs.includes(song.id) || (event.outroSongs || []).includes(song.id))
     .sort((a, b) => parseLocalDate(b.date).getTime() - parseLocalDate(a.date).getTime());
@@ -131,10 +133,11 @@ export default function SongDetail({ song, events, onBack, onUpdateSong }: SongD
                   {[1, 2, 3, 4, 5].map((level) => (
                     <button
                       key={level}
-                      onClick={() => void updateProficiency(level)}
+                      onClick={() => canEdit && void updateProficiency(level)}
+                      disabled={!canEdit}
                       className={`h-1.5 flex-1 rounded-full transition-all ${
                         level <= song.proficiency ? 'bg-emerald-600' : 'bg-emerald-200'
-                      }`}
+                      } ${canEdit ? 'hover:scale-y-150' : 'cursor-default opacity-80'}`}
                     />
                   ))}
                 </div>
@@ -151,10 +154,11 @@ export default function SongDetail({ song, events, onBack, onUpdateSong }: SongD
                   {[1, 2, 3, 4, 5].map((level) => (
                     <button
                       key={level}
-                      onClick={() => void updateDifficulty(level)}
+                      onClick={() => canEdit && void updateDifficulty(level)}
+                      disabled={!canEdit}
                       className={`h-1.5 flex-1 rounded-full transition-all ${
                         level <= song.difficulty ? 'bg-orange-600' : 'bg-orange-200'
-                      }`}
+                      } ${canEdit ? 'hover:scale-y-150' : 'cursor-default opacity-80'}`}
                     />
                   ))}
                 </div>
@@ -162,15 +166,73 @@ export default function SongDetail({ song, events, onBack, onUpdateSong }: SongD
             </div>
           </div>
 
+          <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {song.links.chords && (
+              <a
+                href={song.links.chords}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-6 bg-blue-600 text-white rounded-[2rem] apple-shadow hover:scale-[1.02] transition-all group"
+              >
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Referência</p>
+                  <p className="text-lg font-bold">Cifra Club</p>
+                </div>
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
+                  <Music size={24} />
+                </div>
+              </a>
+            )}
+            {song.links.lyrics && (
+              <a
+                href={song.links.lyrics}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-6 bg-emerald-600 text-white rounded-[2rem] apple-shadow hover:scale-[1.02] transition-all group"
+              >
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Referência</p>
+                  <p className="text-lg font-bold">Letras.mus</p>
+                </div>
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
+                  <FileText size={24} />
+                </div>
+              </a>
+            )}
+            {song.links.video && (
+              <a
+                href={song.links.video}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-6 bg-red-600 text-white rounded-[2rem] apple-shadow hover:scale-[1.02] transition-all group"
+              >
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Referência</p>
+                  <p className="text-lg font-bold">YouTube</p>
+                </div>
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
+                  <PlayCircle size={24} />
+                </div>
+              </a>
+            )}
+          </section>
+
           <section className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h3 className="text-xl font-bold text-[#00153d] flex items-center gap-2">
                 <Calendar size={24} className="text-blue-600" />
-                Historico de Execucao
+                Histórico de Execução
               </h3>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                {songHistory.length} Vezes Tocada
-              </span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100">
+                  <PlayCircle size={14} />
+                  <span>{song.timesPlayed || 0} Cultos</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">
+                  <Mic2 size={14} />
+                  <span>{song.timesRehearsed || 0} Ensaios</span>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -201,61 +263,10 @@ export default function SongDetail({ song, events, onBack, onUpdateSong }: SongD
               {songHistory.length === 0 && (
                 <div className="p-12 border-2 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-300 space-y-4">
                   <Calendar size={48} strokeWidth={1} />
-                  <p className="text-sm font-bold uppercase tracking-widest">Ainda nao foi tocada em eventos</p>
+                  <p className="text-sm font-bold uppercase tracking-widest">Ainda não foi tocada em eventos</p>
                 </div>
               )}
             </div>
-          </section>
-
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {song.links.chords && (
-              <a
-                href={song.links.chords}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-6 bg-blue-600 text-white rounded-[2rem] apple-shadow hover:scale-[1.02] transition-all group"
-              >
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Referencia</p>
-                  <p className="text-lg font-bold">Cifra Club</p>
-                </div>
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
-                  <Music size={24} />
-                </div>
-              </a>
-            )}
-            {song.links.lyrics && (
-              <a
-                href={song.links.lyrics}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-6 bg-emerald-600 text-white rounded-[2rem] apple-shadow hover:scale-[1.02] transition-all group"
-              >
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Referencia</p>
-                  <p className="text-lg font-bold">Letras.mus</p>
-                </div>
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
-                  <FileText size={24} />
-                </div>
-              </a>
-            )}
-            {song.links.video && (
-              <a
-                href={song.links.video}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-6 bg-red-600 text-white rounded-[2rem] apple-shadow hover:scale-[1.02] transition-all group"
-              >
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Referencia</p>
-                  <p className="text-lg font-bold">YouTube</p>
-                </div>
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
-                  <PlayCircle size={24} />
-                </div>
-              </a>
-            )}
           </section>
         </div>
       </div>

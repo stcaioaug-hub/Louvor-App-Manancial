@@ -1,38 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, Plus, MoreVertical, ExternalLink, Star, X, Save, FileText, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Song } from '../types';
-
-const STANDARD_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-function getBaseKey(key: string) {
-  if (!key) return { base: 'C', minor: false };
-  const minor = key.toLowerCase().endsWith('m');
-  let base = key.replace(/m$/i, '');
-  
-  const flatToSharp: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
-  if (flatToSharp[base]) base = flatToSharp[base];
-  if (!STANDARD_KEYS.includes(base)) base = 'C';
-  
-  return { base, minor };
-}
-
-function transposeKey(key: string, steps: number) {
-  const { base, minor } = getBaseKey(key);
-  let index = STANDARD_KEYS.indexOf(base);
-  if (index === -1) index = 0;
-  
-  index = (index + steps) % 12;
-  if (index < 0) index += 12;
-  
-  return STANDARD_KEYS[index] + (minor ? 'm' : '');
-}
-
-function toggleMinorKey(key: string) {
-  const { base, minor } = getBaseKey(key);
-  return base + (minor ? '' : 'm');
-}
+import { 
+  Search, Filter, Plus, MoreVertical, ExternalLink, Star, X, Save, FileText, 
+  Trash2, Edit2, ChevronLeft, ChevronRight, Play, Mic2, ArrowUpDown, ChevronDown 
+} from 'lucide-react';
+import { Song, WorshipEvent } from '../../types';
+import { transposeKey, toggleMinorKey } from '../../lib/chordTransposer';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { motion, AnimatePresence } from 'motion/react';
-import { BackButton } from './BackButton';
+import { BackButton } from '../../components/BackButton';
 
 interface SongEditorModalProps {
   mode: 'create' | 'edit';
@@ -53,6 +28,8 @@ function createEmptySong(): Song {
     tags: [],
     links: {},
     isFavorite: false,
+    timesPlayed: 0,
+    timesRehearsed: 0,
   };
 }
 
@@ -60,6 +37,7 @@ const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorMo
   const [formData, setFormData] = useState<Song>({ ...song });
   const [tagsInput, setTagsInput] = useState(song.tags.join(', '));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
   const handleSave = async () => {
     const cleanedSong: Song = {
@@ -94,13 +72,11 @@ const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorMo
   };
 
   const handleDelete = async () => {
-    if (!onDelete || !window.confirm(`Tem certeza que deseja excluir "${song.title}"?`)) {
-      return;
-    }
-
+    if (!onDelete) return;
     try {
       setIsSubmitting(true);
       await onDelete(song.id);
+      setShowConfirmDelete(false);
       onClose();
     } catch {
       return;
@@ -125,7 +101,7 @@ const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorMo
           </button>
         </div>
 
-        <div className="p-8 space-y-6">
+        <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
           <div className="space-y-4">
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
@@ -182,7 +158,7 @@ const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorMo
                      title="Alternar entre tom maior e menor"
                      type="button"
                    >
-                     Menor (m)
+                     Menor
                    </button>
                 </div>
               </div>
@@ -301,7 +277,7 @@ const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorMo
           </button>
           {mode === 'edit' && onDelete && (
             <button
-              onClick={() => void handleDelete()}
+              onClick={() => setShowConfirmDelete(true)}
               disabled={isSubmitting}
               className="px-6 py-4 bg-red-50 text-red-600 rounded-2xl font-bold hover:bg-red-100 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               title="Excluir Louvor"
@@ -316,16 +292,24 @@ const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorMo
             className="flex-[2] min-w-[160px] py-4 bg-[#00153d] text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 hover:opacity-90 transition-all disabled:opacity-50"
           >
             <Save size={18} />
-            {isSubmitting ? 'Salvando...' : mode === 'create' ? 'Adicionar' : 'Salvar Alteracoes'}
+            {isSubmitting ? 'Salvando...' : mode === 'create' ? 'Adicionar' : 'Salvar'}
           </button>
         </div>
       </motion.div>
+      <ConfirmDialog
+        isOpen={showConfirmDelete}
+        title="Excluir Louvor"
+        message={`Tem certeza que deseja excluir o louvor "${song.title}"? Esta ação não pode ser desfeita.`}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setShowConfirmDelete(false)}
+      />
     </div>
   );
 };
 
 interface SongListProps {
   songs: Song[];
+  events: WorshipEvent[];
   onCreateSong: (song: Omit<Song, 'id'>) => Promise<void>;
   onUpdateSong: (song: Song) => Promise<void>;
   onDeleteSong: (id: string) => Promise<void>;
@@ -334,21 +318,33 @@ interface SongListProps {
   onBack?: () => void;
 }
 
-export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSong, onSelectSong, canEdit = true, onBack }: SongListProps) {
+type FilterType = 'all' | 'favorites' | 'mostPlayed' | 'mostRehearsed';
+
+export default function SongList({ songs, events, onCreateSong, onUpdateSong, onDeleteSong, onSelectSong, canEdit = true, onBack }: SongListProps) {
   const [editingSong, setEditingSong] = useState<Song | null>(null);
+  const [songToDelete, setSongToDelete] = useState<Song | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<FilterType>('all');
+  const [showFilters, setShowFilters] = useState(false);
 
+  const filteredSongs = useMemo(() => {
+    let result = [...songs].filter(
+      (song) =>
+        song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        song.artist.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
-  const filteredSongs = useMemo(
-    () =>
-      songs.filter(
-        (song) =>
-          song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          song.artist.toLowerCase().includes(searchQuery.toLowerCase())
-      ),
-    [searchQuery, songs]
-  );
+    if (filterType === 'favorites') {
+      result = result.filter(s => s.isFavorite);
+    } else if (filterType === 'mostPlayed') {
+      result = result.sort((a, b) => (b.timesPlayed || 0) - (a.timesPlayed || 0));
+    } else if (filterType === 'mostRehearsed') {
+      result = result.sort((a, b) => (b.timesRehearsed || 0) - (a.timesRehearsed || 0));
+    }
+
+    return result;
+  }, [searchQuery, songs, filterType]);
 
   const updateProficiency = async (song: Song, level: number) => {
     await onUpdateSong({ ...song, proficiency: level });
@@ -356,6 +352,11 @@ export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSo
 
   const toggleFavorite = async (song: Song) => {
     await onUpdateSong({ ...song, isFavorite: !song.isFavorite });
+  };
+
+  const updateSongKey = async (song: Song, semitones: number) => {
+    const newKey = transposeKey(song.key, semitones);
+    await onUpdateSong({ ...song, key: newKey });
   };
 
   const handleSaveEdit = async (updatedSong: Song) => {
@@ -370,7 +371,7 @@ export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSo
   };
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-10">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-8">
         <motion.div
            initial={{ opacity: 0, x: -20 }}
@@ -390,15 +391,22 @@ export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSo
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
             <input
               type="text"
-              placeholder="Buscar por título ou artista..."
+              placeholder="Buscar título ou artista..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               className="pl-12 pr-6 py-4 bg-white/60 backdrop-blur-md border border-white/80 rounded-[1.5rem] text-sm w-full focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-xl shadow-blue-900/[0.02]"
             />
           </div>
           <div className="flex items-center gap-3 w-full sm:w-auto order-first sm:order-last">
-            <button className="p-4 bg-white/60 backdrop-blur-md border border-white/80 rounded-[1.5rem] text-slate-500 hover:text-blue-600 hover:bg-white transition-all shadow-xl shadow-blue-900/[0.02] flex items-center justify-center group">
-              <Filter size={20} className="group-hover:rotate-180 transition-transform duration-500" />
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              className={`p-4 rounded-[1.5rem] transition-all shadow-xl shadow-blue-900/[0.02] flex items-center justify-center group border ${
+                showFilters 
+                ? 'bg-[#00153d] text-white border-blue-900 shadow-blue-900/20' 
+                : 'bg-white/60 backdrop-blur-md border-white/80 text-slate-500 hover:text-blue-600 hover:bg-white'
+              }`}
+            >
+              <Filter size={20} className={showFilters ? 'rotate-180 transition-transform duration-500' : 'group-hover:rotate-180 transition-transform duration-500'} />
             </button>
             {canEdit && (
               <motion.button
@@ -418,12 +426,65 @@ export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSo
         </div>
       </header>
 
-      <div className="bg-white rounded-[2rem] apple-shadow overflow-hidden">
-        <div className="hidden md:grid grid-cols-12 px-8 py-4 bg-slate-50/50 border-b border-black/5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-          <div className="col-span-4">Titulo / Artista</div>
-          <div className="col-span-2 text-center">Tom</div>
-          <div className="col-span-3 text-center">Proficiencia</div>
-          <div className="col-span-3 text-right">Referencias</div>
+      <AnimatePresence>
+        {showFilters && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -20 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -20 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap gap-4 p-6 bg-white/40 backdrop-blur-md border border-white/60 rounded-[2.5rem] mb-8 shadow-inner shadow-blue-900/[0.01]">
+              <button
+                onClick={() => setFilterType('all')}
+                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  filterType === 'all' ? 'bg-[#00153d] text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setFilterType('favorites')}
+                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                  filterType === 'favorites' ? 'bg-yellow-500 text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
+                }`}
+              >
+                <Star size={14} fill={filterType === 'favorites' ? "currentColor" : "none"} />
+                Favoritos
+              </button>
+              <button
+                onClick={() => setFilterType('mostPlayed')}
+                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                  filterType === 'mostPlayed' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
+                }`}
+              >
+                <Play size={14} fill={filterType === 'mostPlayed' ? "currentColor" : "none"} />
+                Mais Tocados
+              </button>
+              <button
+                onClick={() => setFilterType('mostRehearsed')}
+                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                  filterType === 'mostRehearsed' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
+                }`}
+              >
+                <Mic2 size={14} />
+                Mais Ensaiados
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="bg-white rounded-[2.5rem] apple-shadow overflow-hidden border border-black/5">
+        <div className="hidden md:grid grid-cols-12 px-8 py-5 bg-slate-50/50 border-b border-black/5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+          <div className="col-span-4 flex items-center gap-2">
+            Titulo / Artista 
+            <ArrowUpDown size={12} className="opacity-50" />
+          </div>
+          <div className="col-span-2 text-center uppercase">Tom</div>
+          <div className="col-span-2 text-center uppercase">Metricas</div>
+          <div className="col-span-2 text-center uppercase">Proficiencia</div>
+          <div className="col-span-2 text-right uppercase">Acoes</div>
         </div>
 
         <div className="divide-y divide-black/5">
@@ -433,113 +494,152 @@ export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSo
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.02 }}
               key={song.id}
-              className="flex flex-col md:grid md:grid-cols-12 items-start md:items-center px-6 md:px-8 py-5 hover:bg-slate-50 transition-colors group gap-4 md:gap-0"
+              className="flex flex-col md:grid md:grid-cols-12 items-start md:items-center px-6 md:px-8 py-5 hover:bg-slate-50 transition-all group gap-4 md:gap-0"
             >
+              {/* Title & Artist & Favorite */}
               <div className="col-span-4 flex items-center gap-4 w-full">
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.8 }}
                   onClick={() => void toggleFavorite(song)}
-                  className={`w-10 h-10 min-w-[40px] rounded-xl flex items-center justify-center transition-colors ${
+                  className={`w-10 h-10 min-w-[40px] rounded-xl flex items-center justify-center transition-all ${
                     song.isFavorite
-                      ? 'bg-yellow-50 text-yellow-500'
-                      : 'bg-slate-100 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600'
+                      ? 'bg-yellow-50 text-yellow-500 shadow-sm border border-yellow-100'
+                      : 'bg-slate-50 text-slate-300 group-hover:bg-white border border-transparent'
                   }`}
                 >
-                  <Star size={18} fill={song.isFavorite ? 'currentColor' : 'none'} />
-                </button>
+                  <Star size={18} fill={song.isFavorite ? 'currentColor' : 'none'} className={song.isFavorite ? 'animate-toggle' : ''} />
+                </motion.button>
                 <button
                   onClick={() => onSelectSong(song.id)}
-                  className="flex-1 min-w-0 text-left hover:opacity-70 transition-opacity"
+                  className="flex-1 min-w-0 text-left hover:translate-x-1 transition-transform"
                 >
-                  <h4 className="font-bold text-[#00153d] text-sm md:text-base truncate">{song.title}</h4>
-                  <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate">{song.artist}</p>
+                  <h4 className="font-bold text-[#00153d] text-sm md:text-base mb-0.5 truncate">{song.title}</h4>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate">{song.artist}</p>
+                    {song.bpm && (
+                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">{song.bpm} BPM</span>
+                    )}
+                  </div>
                 </button>
-                <div className="md:hidden">
-                  <span className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg font-bold text-[10px]">{song.key}</span>
+              </div>
+
+              {/* In-table Key Editing */}
+              <div className="col-span-2 flex justify-center w-full md:w-auto">
+                <div className="flex items-center bg-blue-50/50 p-1.5 rounded-2xl border border-blue-100/50 group/key">
+                  <button 
+                    onClick={() => canEdit && void updateSongKey(song, -1)}
+                    disabled={!canEdit}
+                    className="w-7 h-7 flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all opacity-0 group-hover/key:opacity-100 disabled:hidden"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className="w-10 text-center font-black text-blue-700 text-xs md:text-sm">{song.key}</span>
+                  <button 
+                    onClick={() => canEdit && void updateSongKey(song, 1)}
+                    disabled={!canEdit}
+                    className="w-7 h-7 flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all opacity-0 group-hover/key:opacity-100 disabled:hidden"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
                 </div>
               </div>
 
-              <div className="hidden md:flex col-span-2 justify-center">
-                <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg font-bold text-xs">{song.key}</span>
+              {/* Usage Metrics (New) */}
+              <div className="col-span-2 flex items-center justify-center gap-4 w-full md:w-auto">
+                <div className="flex flex-col items-center group/stat">
+                   <div className="flex items-center gap-1.5 text-blue-600/60 font-black text-[10px]">
+                     <Play size={10} fill="currentColor" />
+                     <span>{song.timesPlayed || 0}</span>
+                   </div>
+                   <span className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter opacity-0 group-hover/stat:opacity-100 transition-opacity">Cultos</span>
+                </div>
+                <div className="flex flex-col items-center group/stat">
+                   <div className="flex items-center gap-1.5 text-indigo-500/60 font-black text-[10px]">
+                     <Mic2 size={10} />
+                     <span>{song.timesRehearsed || 0}</span>
+                   </div>
+                   <span className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter opacity-0 group-hover/stat:opacity-100 transition-opacity">Ensaios</span>
+                </div>
               </div>
 
-              <div className="col-span-3 w-full md:px-4">
-                <div className="flex items-center gap-1.5 md:justify-center">
-                  <span className="md:hidden text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-2">Nivel:</span>
+              {/* In-table Proficiency Editing */}
+              <div className="col-span-2 w-full md:px-4">
+                <div className="flex items-center gap-1 md:justify-center">
                   {[1, 2, 3, 4, 5].map((level) => (
                     <button
                       key={level}
                       onClick={() => canEdit && void updateProficiency(song, level)}
                       disabled={!canEdit}
-                      className={`h-2 flex-1 max-w-[40px] rounded-full transition-all ${
-                        level <= song.proficiency ? 'bg-blue-600' : 'bg-slate-200 hover:bg-slate-300'
-                      } ${!canEdit ? 'cursor-default' : ''}`}
+                      className={`h-1.5 flex-1 max-w-[20px] rounded-full transition-all ${
+                        level <= song.proficiency ? 'bg-blue-600 shadow-sm shadow-blue-200' : 'bg-slate-200 hover:bg-slate-300'
+                      } ${!canEdit ? 'cursor-default' : 'hover:scale-y-150'}`}
                       title={`${level}/5`}
                     />
                   ))}
                 </div>
               </div>
 
-              <div className="col-span-3 flex items-center justify-between md:justify-end gap-2 w-full">
+              {/* Links & Actions */}
+              <div className="col-span-2 flex items-center justify-between md:justify-end gap-3 w-full">
                 <div className="flex gap-2">
-                  <a
-                    href={song.links.chords || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`flex items-center gap-1.5 px-4 md:px-3 py-2 md:py-1.5 rounded-full text-[10px] font-bold transition-all ${
-                      song.links.chords ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : 'bg-slate-100 text-slate-400 pointer-events-none'
-                    }`}
-                  >
-                    <ExternalLink size={12} />
-                    Cifra
-                  </a>
-                  <a
-                    href={song.links.lyrics || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`flex items-center gap-1.5 px-4 md:px-3 py-2 md:py-1.5 rounded-full text-[10px] font-bold transition-all ${
-                      song.links.lyrics
-                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                        : 'bg-slate-100 text-slate-400 pointer-events-none'
-                    }`}
-                  >
-                    <FileText size={12} />
-                    Letra
-                  </a>
-                </div>
-                <div className="flex items-center gap-1">
-                  {canEdit && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setIsCreating(false);
-                          setEditingSong(song);
-                        }}
-                        className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
-                        title="Editar"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Tem certeza que deseja excluir "${song.title}"?`)) {
-                            void onDeleteSong(song.id);
-                          }
-                        }}
-                        className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
-                        title="Excluir"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </>
+                  {song.links.chords && (
+                    <a
+                      href={song.links.chords}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all hover:scale-110"
+                      title="Cifra"
+                    >
+                      <ExternalLink size={16} />
+                    </a>
+                  )}
+                  {song.links.lyrics && (
+                    <a
+                      href={song.links.lyrics}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all hover:scale-110"
+                      title="Letra"
+                    >
+                      <FileText size={16} />
+                    </a>
                   )}
                 </div>
+                
+                {canEdit && (
+                  <div className="flex items-center border-l border-black/5 pl-3 gap-1">
+                    <button
+                      onClick={() => {
+                        setIsCreating(false);
+                        setEditingSong(song);
+                      }}
+                      className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                      title="Editar"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => setSongToDelete(song)}
+                      className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                      title="Excluir"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}
 
           {filteredSongs.length === 0 && (
-            <div className="px-8 py-12 text-center text-slate-400">
-              <p className="text-xs font-bold uppercase tracking-widest">Nenhum louvor encontrado</p>
+            <div className="px-8 py-20 text-center flex flex-col items-center justify-center gap-4 bg-slate-50/20">
+              <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-slate-200 border border-slate-100 shadow-sm">
+                <Search size={32} />
+              </div>
+              <div>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Nenhum louvor encontrado</p>
+                <p className="text-xs text-slate-500 mt-1">Tente ajustar seus filtros ou busca.</p>
+              </div>
             </div>
           )}
         </div>
@@ -559,6 +659,19 @@ export default function SongList({ songs, onCreateSong, onUpdateSong, onDeleteSo
           />
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        isOpen={!!songToDelete}
+        title="Excluir Louvor"
+        message={songToDelete ? `Tem certeza que deseja excluir o louvor "${songToDelete.title}"?` : ''}
+        onConfirm={() => {
+          if (songToDelete) {
+            void onDeleteSong(songToDelete.id);
+            setSongToDelete(null);
+          }
+        }}
+        onCancel={() => setSongToDelete(null)}
+      />
     </div>
   );
 }

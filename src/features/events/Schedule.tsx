@@ -16,12 +16,16 @@ import {
   Edit2,
   Save,
   Search,
-  Check
+  Check,
+  Repeat,
+  Layers,
+  Sparkles,
+  Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { WorshipEvent, Song } from '../types';
-import { BackButton } from './BackButton';
-import { formatFullDate } from '../lib/dateUtils';
+import { WorshipEvent, Song } from '../../types';
+import { BackButton } from '../../components/BackButton';
+import { formatFullDate } from '../../lib/dateUtils';
 
 interface ScheduleProps {
   events: WorshipEvent[];
@@ -48,6 +52,17 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
   const [songSearchTerm, setSongSearchTerm] = useState('');
+  const [recurrence, setRecurrence] = useState<{
+    enabled: boolean;
+    frequency: 'weekly' | 'biweekly';
+    endDate: string;
+  }>({
+    enabled: false,
+    frequency: 'weekly',
+    endDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
+  });
+  const [subType, setSubType] = useState<string>('');
+  
   const [newEvent, setNewEvent] = useState<Partial<WorshipEvent>>({
     type: 'service',
     title: '',
@@ -116,19 +131,44 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
     if (!onCreateEvent) return;
     try {
       setIsCreating(true);
-      await onCreateEvent({
-        ...newEvent,
-        title: newEvent.title || 'Novo Evento',
-        type: newEvent.type || 'service',
-        date: newEvent.date || new Date().toISOString().split('T')[0],
-        time: newEvent.time || '19:30',
-        songs: newEvent.songs || [],
-        team: { vocal: [], instruments: {} }
-      } as Omit<WorshipEvent, 'id'>);
-      setShowWizard(false);
-      setWizardStep(4);
-    } catch {
-      // do nothing
+      
+      const eventDates: string[] = [newEvent.date || new Date().toISOString().split('T')[0]];
+      
+      if (recurrence.enabled && recurrence.endDate) {
+        let currentDate = new Date(eventDates[0] + 'T12:00:00');
+        const endLimit = new Date(recurrence.endDate + 'T23:59:59');
+        const interval = recurrence.frequency === 'weekly' ? 7 : 14;
+        
+        // Add subsequent dates
+        while (true) {
+          const nextDate = new Date(currentDate);
+          nextDate.setDate(nextDate.getDate() + interval);
+          if (nextDate > endLimit) break;
+          eventDates.push(nextDate.toISOString().split('T')[0]);
+          currentDate = nextDate;
+          
+          // Safety break to prevent infinite loops (max 1 year of events)
+          if (eventDates.length > 52) break;
+        }
+      }
+
+      const baseTitle = subType ? `${subType}${newEvent.title ? `: ${newEvent.title}` : ''}` : (newEvent.title || 'Novo Evento');
+
+      for (const date of eventDates) {
+        await onCreateEvent({
+          ...newEvent,
+          title: baseTitle,
+          type: newEvent.type || 'service',
+          date: date,
+          time: newEvent.time || '19:30',
+          songs: newEvent.songs || [],
+          team: { vocal: [], instruments: {} }
+        } as Omit<WorshipEvent, 'id'>);
+      }
+      
+      setWizardStep(5);
+    } catch (error) {
+      console.error("Erro ao criar evento(s):", error);
     } finally {
       setIsCreating(false);
     }
@@ -577,7 +617,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                <div className="p-8 pb-6 flex justify-between items-start relative z-10 shrink-0">
                  <div>
                     <h3 className="text-2xl font-headline font-extrabold text-[#00153d] tracking-tight mb-1">Novo Evento</h3>
-                    <p className="text-sm text-slate-500 font-medium">Passo {wizardStep} de 4</p>
+                    <p className="text-sm text-slate-500 font-medium">Passo {wizardStep} de 5</p>
                  </div>
                  <button onClick={() => setShowWizard(false)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all active:scale-95">
                    <X size={24} />
@@ -586,47 +626,68 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                
                <div className="p-8 pt-0 relative z-10 overflow-y-auto w-full no-scrollbar flex-1">
                   {wizardStep === 1 && (
-                     <div className="space-y-5">
-                       <p className="text-sm text-[#00153d] font-bold">Que tipo de evento será e qual o nome dele?</p>
-                       <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3">Tipo do evento</label>
-                         <div className="flex gap-4">
-                           <button 
-                             onClick={() => setNewEvent({...newEvent, type: 'service'})}
-                             className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest border-2 transition-all ${
-                               newEvent.type === 'service' ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-md shadow-blue-500/10' : 'bg-transparent text-slate-400 border-slate-100 hover:bg-slate-50'
-                             }`}
-                           >
-                             Culto / Serviço
-                           </button>
-                           <button 
-                             onClick={() => setNewEvent({...newEvent, type: 'rehearsal'})}
-                             className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest border-2 transition-all ${
-                               newEvent.type === 'rehearsal' ? 'bg-purple-50 text-purple-600 border-purple-200 shadow-md shadow-purple-500/10' : 'bg-transparent text-slate-400 border-slate-100 hover:bg-slate-50'
-                             }`}
-                           >
-                             Ensaio
-                           </button>
+                     <div className="space-y-6">
+                       <p className="text-sm text-[#00153d] font-bold">Que tipo de evento será?</p>
+                       <div className="grid grid-cols-2 gap-4">
+                         <button 
+                           onClick={() => setNewEvent({...newEvent, type: 'service'})}
+                           className={`group relative overflow-hidden p-6 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-3 ${
+                             newEvent.type === 'service' ? 'bg-blue-50 border-blue-200 shadow-xl shadow-blue-500/10' : 'bg-transparent border-slate-100 hover:bg-slate-50'
+                           }`}
+                         >
+                           <div className={`p-4 rounded-2xl transition-all ${newEvent.type === 'service' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
+                             <Sparkles size={24} />
+                           </div>
+                           <span className={`text-xs font-black uppercase tracking-widest ${newEvent.type === 'service' ? 'text-blue-600' : 'text-slate-400'}`}>Culto / Serviço</span>
+                         </button>
+                         <button 
+                           onClick={() => setNewEvent({...newEvent, type: 'rehearsal'})}
+                           className={`group relative overflow-hidden p-6 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-3 ${
+                             newEvent.type === 'rehearsal' ? 'bg-purple-50 border-purple-200 shadow-xl shadow-purple-500/10' : 'bg-transparent border-slate-100 hover:bg-slate-50'
+                           }`}
+                         >
+                           <div className={`p-4 rounded-2xl transition-all ${newEvent.type === 'rehearsal' ? 'bg-purple-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
+                             <Music size={24} />
+                           </div>
+                           <span className={`text-xs font-black uppercase tracking-widest ${newEvent.type === 'rehearsal' ? 'text-purple-600' : 'text-slate-400'}`}>Ensaio Técnico</span>
+                         </button>
+                       </div>
+
+                       {newEvent.type === 'service' && (
+                         <div className="space-y-3">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Subtipo do Culto</label>
+                           <div className="grid grid-cols-2 gap-2">
+                             {[
+                               { id: 'Culto de Celebração', icon: <Sparkles size={14} /> },
+                               { id: 'Culto de Jovens', icon: <Users size={14} /> },
+                               { id: 'Culto Temático', icon: <Tag size={14} /> },
+                               { id: 'Culto Comemorativo', icon: <Layers size={14} /> },
+                               { id: 'Vigília', icon: <Clock size={14} /> },
+                               { id: 'Outro', icon: <Plus size={14} /> }
+                             ].map((item) => (
+                               <button
+                                 key={item.id}
+                                 onClick={() => setSubType(item.id === 'Outro' ? '' : item.id)}
+                                 className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-all text-xs font-bold ${
+                                   (subType === item.id || (item.id === 'Outro' && subType && !['Culto de Celebração', 'Culto de Jovens', 'Culto Temático', 'Culto Comemorativo', 'Vigília'].includes(subType))) 
+                                     ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                                     : 'bg-white text-slate-500 border-slate-100 hover:border-blue-200'
+                                 }`}
+                               >
+                                 {item.icon}
+                                 {item.id}
+                               </button>
+                             ))}
+                           </div>
                          </div>
-                       </div>
-                       <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nome do evento</label>
-                         <input 
-                           type="text"
-                           value={newEvent.title}
-                           onChange={e => setNewEvent({...newEvent, title: e.target.value})}
-                           placeholder={newEvent.type === 'service' ? "Ex: Culto de Celebração" : "Ex: Ensaio de Sexta"}
-                           className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all text-[#00153d] font-bold placeholder:font-medium"
-                         />
-                       </div>
+                       )}
 
                        <div className="flex gap-4 pt-4">
                          <button 
                            onClick={() => setWizardStep(2)}
-                           disabled={!newEvent.title}
-                           className="flex-1 py-4 bg-[#00153d] text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2 group"
+                           className="flex-1 py-4 bg-[#00153d] text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all active:scale-95 flex justify-center items-center gap-2 group"
                          >
-                           <span>Avançar</span>
+                           <span>Continuar</span>
                            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                          </button>
                        </div>
@@ -634,11 +695,58 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                   )}
 
                   {wizardStep === 2 && (
-                     <div className="space-y-5">
-                       <p className="text-sm text-[#00153d] font-bold">Confirme a data e onde será.</p>
+                    <div className="space-y-6">
+                      <p className="text-sm text-[#00153d] font-bold">Dê um nome e local para o evento.</p>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Título do Evento (Opcional)</label>
+                          <input 
+                            type="text"
+                            value={newEvent.title}
+                            onChange={e => setNewEvent({...newEvent, title: e.target.value})}
+                            placeholder="Ex: Noite de Avivamento"
+                            className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all text-[#00153d] font-bold placeholder:font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Local</label>
+                          <div className="relative">
+                            <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                              type="text"
+                              value={newEvent.location}
+                              onChange={e => setNewEvent({...newEvent, location: e.target.value})}
+                              placeholder="Igreja Manancial"
+                              className="w-full pl-12 pr-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all text-[#00153d] font-bold placeholder:font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 pt-4">
+                        <button 
+                          onClick={() => setWizardStep(1)}
+                          className="w-16 flex items-center justify-center p-4 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:bg-slate-100 hover:text-[#00153d] transition-all active:scale-95"
+                        >
+                          <ChevronLeft size={20} />
+                        </button>
+                        <button 
+                          onClick={() => setWizardStep(3)}
+                          className="flex-1 py-4 bg-[#00153d] text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all active:scale-95 flex justify-center items-center gap-2 group"
+                        >
+                          <span>Definir Data & Horário</span>
+                          <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {wizardStep === 3 && (
+                     <div className="space-y-6">
+                       <p className="text-sm text-[#00153d] font-bold">Quando será o evento?</p>
                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Data</label>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Data Inicial</label>
                             <input 
                               type="date"
                               value={newEvent.date}
@@ -646,8 +754,8 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                               className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all text-[#00153d] font-bold"
                             />
                           </div>
-                          <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Horário</label>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Horário</label>
                             <input 
                               type="time"
                               value={newEvent.time}
@@ -656,37 +764,79 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                             />
                           </div>
                        </div>
-                       <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Local (Opcional)</label>
-                         <input 
-                           type="text"
-                           value={newEvent.location}
-                           onChange={e => setNewEvent({...newEvent, location: e.target.value})}
-                           placeholder="Ex: Igreja Principal"
-                           className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all text-[#00153d] font-bold placeholder:font-medium"
-                         />
+
+                       <div className="p-6 bg-slate-50 rounded-3xl border border-dashed border-slate-200 space-y-4">
+                         <div className="flex items-center justify-between">
+                           <div className="flex items-center gap-3">
+                             <div className={`p-2 rounded-lg ${recurrence.enabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-400'}`}>
+                               <Repeat size={18} />
+                             </div>
+                             <span className="text-sm text-[#00153d] font-bold">Evento Recorrente?</span>
+                           </div>
+                           <button 
+                             onClick={() => setRecurrence({ ...recurrence, enabled: !recurrence.enabled })}
+                             className={`w-12 h-6 rounded-full transition-colors relative ${recurrence.enabled ? 'bg-blue-600' : 'bg-slate-300'}`}
+                           >
+                             <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${recurrence.enabled ? 'left-7' : 'left-1'}`} />
+                           </button>
+                         </div>
+
+                         <AnimatePresence>
+                           {recurrence.enabled && (
+                             <motion.div 
+                               initial={{ opacity: 0, height: 0 }}
+                               animate={{ opacity: 1, height: 'auto' }}
+                               exit={{ opacity: 0, height: 0 }}
+                               className="space-y-4 overflow-hidden pt-2"
+                             >
+                               <div className="grid grid-cols-2 gap-4">
+                                 <div>
+                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Frequência</label>
+                                   <select 
+                                     value={recurrence.frequency}
+                                     onChange={e => setRecurrence({ ...recurrence, frequency: e.target.value as any })}
+                                     className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#00153d] focus:outline-none"
+                                   >
+                                     <option value="weekly">Semanal</option>
+                                     <option value="biweekly">Quinzenal</option>
+                                   </select>
+                                 </div>
+                                 <div>
+                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Data Final</label>
+                                   <input 
+                                     type="date"
+                                     value={recurrence.endDate}
+                                     onChange={e => setRecurrence({ ...recurrence, endDate: e.target.value })}
+                                     className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#00153d] focus:outline-none"
+                                   />
+                                 </div>
+                               </div>
+                               <p className="text-[10px] text-blue-600/70 font-medium italic">O sistema criará automaticamente múltiplos eventos com o mesmo repertório base.</p>
+                             </motion.div>
+                           )}
+                         </AnimatePresence>
                        </div>
 
-                       <div className="flex gap-4 pt-4">
+                       <div className="flex gap-4 pt-2">
                          <button 
-                           onClick={() => setWizardStep(1)}
+                           onClick={() => setWizardStep(2)}
                            className="w-16 flex items-center justify-center p-4 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:bg-slate-100 hover:text-[#00153d] transition-all active:scale-95"
                          >
                            <ChevronLeft size={20} />
                          </button>
                          <button 
-                           onClick={() => setWizardStep(3)}
+                           onClick={() => setWizardStep(4)}
                            disabled={!newEvent.date || !newEvent.time}
                            className="flex-1 py-4 bg-[#00153d] text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2 group"
                          >
-                           <span>Avançar para o Repertório</span>
+                           <span>Avançar para Repertório</span>
                            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                          </button>
                        </div>
                      </div>
                   )}
 
-                  {wizardStep === 3 && (
+                  {wizardStep === 4 && (
                      <div className="space-y-6">
                        <p className="text-sm text-[#00153d] font-bold">Por último, vamos montar a lista de louvores!</p>
                        
@@ -754,28 +904,28 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                          )}
                          {songSearchTerm && suggestedSongs.length === 0 && (
                             <p className="text-xs text-slate-400 text-center py-2">Nenhum louvor restante encontrado com esse nome.</p>
-                         )}
-                       </div>
+                          )}
+                        </div>
 
-                       <div className="flex gap-4 pt-6">
-                         <button 
-                           onClick={() => setWizardStep(2)}
-                           className="w-16 flex items-center justify-center p-4 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:bg-slate-100 hover:text-[#00153d] transition-all active:scale-95"
-                         >
-                           <ChevronLeft size={20} />
-                         </button>
-                         <button 
-                           onClick={handleCreateEvent}
-                           disabled={isCreating}
-                           className="flex-1 py-4 bg-emerald-600 text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2"
-                         >
-                           <span>{isCreating ? 'Finalizando...' : 'Confirmar e Criar'}</span>
-                         </button>
-                       </div>
-                     </div>
-                  )}
+                        <div className="flex gap-4 pt-6">
+                          <button 
+                            onClick={() => setWizardStep(3)}
+                            className="w-16 flex items-center justify-center p-4 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:bg-slate-100 hover:text-[#00153d] transition-all active:scale-95"
+                          >
+                            <ChevronLeft size={20} />
+                          </button>
+                          <button 
+                            onClick={handleCreateEvent}
+                            disabled={isCreating}
+                            className="flex-1 py-4 bg-emerald-600 text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2"
+                          >
+                            <span>{isCreating ? 'Finalizando...' : 'Confirmar e Criar'}</span>
+                          </button>
+                        </div>
+                      </div>
+                   )}
 
-                  {wizardStep === 4 && (
+                   {wizardStep === 5 && (
                      <div className="flex flex-col items-center justify-center text-center py-8 space-y-6">
                         <div className="w-24 h-24 bg-emerald-100 rounded-[2rem] flex items-center justify-center text-emerald-500 animate-float shadow-xl shadow-emerald-500/20">
                            <CalendarIcon size={40} />

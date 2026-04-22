@@ -7,21 +7,22 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { AlertCircle, LoaderCircle, PlusCircle, RefreshCcw, Settings as SettingsIcon, PanelLeft, ChevronLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { BackButton } from './components/BackButton';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
-import SongList from './components/SongList';
-import SongDetail from './components/SongDetail';
-import Schedule from './components/Schedule';
-import EventDetail from './components/EventDetail';
-import TeamList from './components/TeamList';
-import Login from './components/Login';
-import Settings from './components/Settings';
-import Insights from './components/Insights';
-import { OnboardingWizard } from './components/OnboardingWizard';
-import NewSongs from './components/NewSongs';
+import Dashboard from './features/dashboard/Dashboard';
+import SongList from './features/songs/SongList';
+import SongDetail from './features/songs/SongDetail';
+import Schedule from './features/events/Schedule';
+import EventDetail from './features/events/EventDetail';
+import TeamList from './features/team/TeamList';
+import Login from './features/auth/Login';
+import Settings from './features/settings/Settings';
+import Insights from './features/insights/Insights';
+import { OnboardingWizard } from './features/auth/OnboardingWizard';
+import NewSongs from './features/songs/NewSongs';
 import { supabase } from './lib/supabase';
 import { getProfile, signOut } from './lib/auth';
 import {
@@ -41,8 +42,9 @@ import {
   deleteEvent,
   updateSong,
   updateTeamMember,
+  createRehearsalReport,
 } from './lib/appData';
-import { Song, TeamMember, WorshipEvent, Profile } from './types';
+import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport } from './types';
 import { User } from '@supabase/supabase-js';
 
 // Polyfill for useEffectEvent (experimental in React 19)
@@ -68,12 +70,15 @@ export default function App() {
   const appMode = getAppMode();
   const appModeMessage = getAppModeMessage();
   const isLocalMode = appMode === 'local';
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
+  
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isDetailView = location.pathname.split('/').length > 3; // ex: /app/events/123
+
   const [songs, setSongs] = useState<Song[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [events, setEvents] = useState<WorshipEvent[]>([]);
+  const [rehearsalReports, setRehearsalReports] = useState<RehearsalReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
@@ -98,11 +103,13 @@ export default function App() {
     songs: Song[];
     team: TeamMember[];
     events: WorshipEvent[];
+    rehearsalReports: RehearsalReport[];
   }) => {
     startTransition(() => {
       setSongs(data.songs);
       setTeam(data.team);
       setEvents(data.events);
+      setRehearsalReports(data.rehearsalReports || []);
     });
   });
 
@@ -236,27 +243,18 @@ export default function App() {
     };
   }, []);
 
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.id === selectedEventId) ?? null,
-    [events, selectedEventId]
-  );
-
-  const selectedSong = useMemo(
-    () => songs.find((song) => song.id === selectedSongId) ?? null,
-    [songs, selectedSongId]
-  );
-
   useEffect(() => {
-    if (selectedEventId && !selectedEvent) {
-      setSelectedEventId(null);
+    if (isAuthLoading) return;
+    if (!isLocalMode) {
+      if (!user && location.pathname !== '/login') {
+        navigate('/login', { replace: true });
+      } else if (user && profile && !profile.onboarding_completed && location.pathname !== '/onboarding') {
+        navigate('/onboarding', { replace: true });
+      } else if (user && profile?.onboarding_completed && (location.pathname === '/login' || location.pathname === '/onboarding' || location.pathname === '/')) {
+        navigate('/app/dashboard', { replace: true });
+      }
     }
-  }, [selectedEventId, selectedEvent]);
-
-  useEffect(() => {
-    if (selectedSongId && !selectedSong) {
-      setSelectedSongId(null);
-    }
-  }, [selectedSongId, selectedSong]);
+  }, [user, profile, isAuthLoading, isLocalMode, location.pathname, navigate]);
 
   const handleCreateSong = async (song: Omit<Song, 'id'>) => {
     try {
@@ -393,14 +391,26 @@ export default function App() {
     }
   };
 
+  const handleCreateRehearsalReport = async (report: Omit<RehearsalReport, 'id'>) => {
+    try {
+      setErrorMessage(null);
+      const createdReport = await createRehearsalReport(report);
+      setRehearsalReports(prev => [createdReport, ...prev]);
+      
+      // Reload app data to update song rehearsal counts
+      void loadData();
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+      throw error;
+    }
+  };
+
   const handleDeleteEvent = async (id: string) => {
     try {
       setErrorMessage(null);
       await deleteEvent(id);
       setEvents((previous) => previous.filter((event) => event.id !== id));
-      if (selectedEventId === id) {
-        setSelectedEventId(null);
-      }
+      navigate('/app/events');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
       throw error;
@@ -410,125 +420,137 @@ export default function App() {
   const effectiveProfile = profile ?? (isLocalMode ? localProfile : null);
   const isMinister = isLocalMode || effectiveProfile?.role === 'minister' || effectiveProfile?.role === 'pastor';
 
+  const EventDetailRoute = () => {
+    const { eventId } = useParams();
+    const event = useMemo(() => events.find(e => e.id === eventId) ?? null, [events, eventId]);
+    if (!event) return <Navigate to="/app/events" replace />;
+    
+    return (
+      <EventDetail
+        event={event}
+        events={events}
+        songs={songs}
+        team={team}
+        onBack={() => navigate('/app/schedule')}
+        onUpdate={handleUpdateEvent}
+        onUpdateSong={handleUpdateSong}
+        onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
+        onSelectEvent={(id) => navigate(`/app/events/${id}`)}
+        canEdit={isMinister}
+        userProfile={effectiveProfile}
+        isSidebarHidden={isSidebarHidden}
+      />
+    );
+  };
+
+  const SongDetailRoute = () => {
+    const { songId } = useParams();
+    const song = useMemo(() => songs.find(s => s.id === songId) ?? null, [songs, songId]);
+    if (!song) return <Navigate to="/app/repertoire" replace />;
+    
+    return (
+      <SongDetail
+        song={song}
+        events={events}
+        onBack={() => navigate(-1)}
+        onUpdateSong={handleUpdateSong}
+        canEdit={isMinister}
+      />
+    );
+  };
+
   const renderContent = () => {
-    if (selectedEvent) {
-      return (
-        <EventDetail
-          event={selectedEvent}
-          events={events}
-          songs={songs}
-          team={team}
-          onBack={() => setSelectedEventId(null)}
-          onUpdate={handleUpdateEvent}
-          onUpdateSong={handleUpdateSong}
-          onSelectSong={setSelectedSongId}
-          onSelectEvent={setSelectedEventId}
-          onDeleteEvent={() => handleDeleteEvent(selectedEvent.id)}
-          canEdit={isMinister}
-          userProfile={effectiveProfile}
-        />
-      );
-    }
-
-    if (selectedSong) {
-      return (
-        <SongDetail
-          song={selectedSong}
-          events={events}
-          onBack={() => setSelectedSongId(null)}
-          onUpdateSong={handleUpdateSong}
-        />
-      );
-    }
-
-    switch (activeTab) {
-      case 'dashboard':
-        return (
+    return (
+      <Routes>
+        <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+        
+        <Route path="/login" element={<Login onLogin={() => void loadData({ withLoading: true })} />} />
+        <Route path="/onboarding" element={profile ? <OnboardingWizard profile={profile} onComplete={setProfile} /> : <Navigate to="/login" replace />} />
+        
+        <Route path="/app/dashboard" element={
           <Dashboard
-            setActiveTab={setActiveTab}
+            setActiveTab={(id) => navigate(`/app/${id}`)}
             songs={songs}
             team={team}
             events={events}
-            onSelectEvent={setSelectedEventId}
-            onSelectSong={setSelectedSongId}
+            rehearsalReports={rehearsalReports}
+            onSelectEvent={(id) => navigate(`/app/events/${id}`)}
+            onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
+            onCreateRehearsalReport={handleCreateRehearsalReport}
             userProfile={effectiveProfile}
           />
-        );
-      case 'repertoire':
-        return (
+        } />
+        
+        <Route path="/app/repertoire" element={
           <SongList
             songs={songs}
+            events={events}
             onCreateSong={handleCreateSong}
             onUpdateSong={handleUpdateSong}
             onDeleteSong={handleDeleteSong}
-            onSelectSong={setSelectedSongId}
+            onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
             canEdit={isMinister}
-            onBack={() => setActiveTab('dashboard')}
+            onBack={() => navigate('/app/dashboard')}
           />
-        );
-      case 'schedule':
-        return (
+        } />
+        
+        <Route path="/app/repertoire/:songId" element={<SongDetailRoute />} />
+        
+        <Route path="/app/schedule" element={
           <Schedule 
             events={events} 
             songs={songs} 
-            onSelectEvent={setSelectedEventId} 
+            onSelectEvent={(id) => navigate(`/app/events/${id}`)}
             onCreateEvent={handleCreateEvent}
             onUpdateEvent={handleUpdateEvent}
             canEdit={isMinister}
-            onBack={() => setActiveTab('dashboard')}
+            onBack={() => navigate('/app/dashboard')}
           />
-        );
-      case 'team':
-        return (
+        } />
+        
+        <Route path="/app/events/:eventId" element={<EventDetailRoute />} />
+        
+        <Route path="/app/team" element={
           <TeamList
             team={team}
             onCreateMember={handleCreateMember}
             onUpdateMember={handleUpdateMember}
             onDeleteMember={handleDeleteMember}
             canEdit={isMinister}
-            onBack={() => setActiveTab('dashboard')}
+            onBack={() => navigate('/app/dashboard')}
           />
-        );
-      case 'new-songs':
-        return (
+        } />
+        
+        <Route path="/app/new-songs" element={
           <NewSongs
             songs={songs}
             events={events}
-            onSelectSong={setSelectedSongId}
-            onBack={() => setActiveTab('dashboard')}
+            onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
+            onBack={() => navigate('/app/dashboard')}
           />
-        );
-      case 'insights':
-        return (
+        } />
+        
+        <Route path="/app/insights" element={
           <Insights
             songs={songs}
             team={team}
             events={events}
-            onBack={() => setActiveTab('dashboard')}
+            onBack={() => navigate('/app/dashboard')}
           />
-        );
-      case 'settings':
-        return (
+        } />
+        
+        <Route path="/app/settings" element={
           <Settings 
             profile={effectiveProfile} 
             email={user?.email} 
             onUpdateProfile={setProfile} 
-            onBack={() => setActiveTab('dashboard')}
+            onBack={() => navigate('/app/dashboard')}
           />
-        );
-      default:
-        return (
-          <Dashboard
-            setActiveTab={setActiveTab}
-            songs={songs}
-            team={team}
-            events={events}
-            onSelectEvent={setSelectedEventId}
-            onSelectSong={setSelectedSongId}
-            userProfile={effectiveProfile}
-          />
-        );
-    }
+        } />
+        
+        <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+      </Routes>
+    );
   };
 
   if (isAuthLoading) {
@@ -539,13 +561,7 @@ export default function App() {
     );
   }
 
-  if (!isLocalMode && !user) {
-    return <Login onLogin={() => void loadData({ withLoading: true })} />;
-  }
-
-  if (!isLocalMode && profile && !profile.onboarding_completed) {
-    return <OnboardingWizard profile={profile} onComplete={setProfile} />;
-  }
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/onboarding';
 
   return (
     <div className="min-h-screen manancial-gradient relative overflow-x-hidden">
@@ -555,17 +571,17 @@ export default function App() {
         <div className="absolute bottom-[-20%] left-[-10%] w-[60%] h-[60%] bg-cyan-600 rounded-full blur-[150px]" />
       </div>
 
-      <Sidebar 
-        activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
-        onSignOut={signOut}
-        userProfile={effectiveProfile}
-        isSidebarHidden={isSidebarHidden}
-        setIsSidebarHidden={setIsSidebarHidden}
-        showMobileNav={!selectedEvent && !selectedSong}
-      />
+      {!isAuthRoute && (
+        <Sidebar 
+          onSignOut={signOut}
+          userProfile={effectiveProfile}
+          isSidebarHidden={isSidebarHidden}
+          setIsSidebarHidden={setIsSidebarHidden}
+          showMobileNav={!isDetailView}
+        />
+      )}
 
-      {isSidebarHidden && (
+      {isSidebarHidden && !isAuthRoute && (
         <button 
           onClick={() => setIsSidebarHidden(false)}
           className="fixed left-4 top-1/2 -translate-y-1/2 glass p-4 rounded-3xl shadow-2xl text-blue-600 hover:pl-8 transition-all z-50 md:flex hidden group border border-white/40 active:scale-95"
@@ -575,7 +591,7 @@ export default function App() {
         </button>
       )}
 
-      <main className={`relative z-10 transition-all duration-500 ease-in-out ${isSidebarHidden ? 'p-6 md:p-12 w-full max-w-[1600px] mx-auto pb-40 md:pb-12' : 'md:pl-80 p-6 md:p-12 max-w-7xl mx-auto pb-40 md:pb-12'}`}>
+      <main className={`relative z-10 transition-all duration-500 ease-in-out ${isAuthRoute ? 'w-full' : isSidebarHidden ? 'p-6 md:p-12 w-full max-w-[1600px] mx-auto pb-40 md:pb-12' : 'md:pl-80 p-6 md:p-12 max-w-7xl mx-auto pb-40 md:pb-12'}`}>
         {appMode === 'local' && (
           <div className="mb-8 flex flex-col gap-4 rounded-[2.5rem] glass border border-blue-200/50 px-8 py-6 text-blue-900 shadow-xl overflow-hidden relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16" />

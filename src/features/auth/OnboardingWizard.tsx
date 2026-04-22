@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { Profile } from '../types';
+import { supabase } from '../../lib/supabase';
+import { Profile } from '../../types';
 import { 
   User, 
   Music, 

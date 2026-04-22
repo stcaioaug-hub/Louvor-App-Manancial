@@ -22,6 +22,8 @@ export interface Song {
   isFavorite?: boolean;
   tags: string[];
   lastPlayed?: string;
+  timesPlayed?: number;
+  timesRehearsed?: number;
   links: {
     chords?: string;
     lyrics?: string;
@@ -61,4 +63,15 @@ export interface TeamMember {
   category: string;
   avatar?: string;
   isLeader?: boolean;
+}
+export interface RehearsalReport {
+  id: string;
+  date: string;
+  minister_id?: string;
+  event_id?: string;
+  songs_ids: string[];
+  attendance: { [userId: string]: boolean };
+  sentiment: string;
+  observations: string;
+  created_at?: string;
 }

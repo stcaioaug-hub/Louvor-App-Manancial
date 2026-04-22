@@ -21,8 +21,8 @@ import {
   Mic,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { formatFullDate } from '../lib/dateUtils';
-import { BackButton } from './BackButton';
+import { formatFullDate, isPastEvent } from '../../lib/dateUtils';
+import { BackButton } from '../../components/BackButton';
 import {
   DndContext,
   closestCenter,
@@ -40,37 +40,9 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { WorshipEvent, Song, TeamMember, Profile } from '../types';
+import { WorshipEvent, Song, TeamMember, Profile } from '../../types';
 
-const STANDARD_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-function getBaseKey(key: string) {
-  if (!key) return { base: 'C', minor: false };
-  const minor = key.toLowerCase().endsWith('m');
-  let base = key.replace(/m$/i, '');
-  
-  const flatToSharp: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
-  if (flatToSharp[base]) base = flatToSharp[base];
-  if (!STANDARD_KEYS.includes(base)) base = 'C';
-  
-  return { base, minor };
-}
-
-function transposeKey(key: string, steps: number) {
-  const { base, minor } = getBaseKey(key);
-  let index = STANDARD_KEYS.indexOf(base);
-  if (index === -1) index = 0;
-  
-  index = (index + steps) % 12;
-  if (index < 0) index += 12;
-  
-  return STANDARD_KEYS[index] + (minor ? 'm' : '');
-}
-
-function toggleMinorKey(key: string) {
-  const { base, minor } = getBaseKey(key);
-  return base + (minor ? '' : 'm');
-}
+import { transposeKey, toggleMinorKey } from '../../lib/chordTransposer';
 
 interface EventDetailProps {
   event: WorshipEvent;
@@ -85,6 +57,7 @@ interface EventDetailProps {
   events: WorshipEvent[];
   canEdit?: boolean;
   userProfile?: Profile | null;
+  isSidebarHidden?: boolean;
 }
 
 interface SortableSongItemProps {
@@ -209,7 +182,7 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
   );
 }
 
-export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile }: EventDetailProps) {
+export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedEvent, setEditedEvent] = useState<WorshipEvent>({ ...event });
   const [editingSongMetadata, setEditingSongMetadata] = useState<Song | null>(null);
@@ -217,6 +190,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const [showAddSongModal, setShowAddSongModal] = useState<'main' | 'offering' | 'outro' | null>(null);
   const [showAddTeamModal, setShowAddTeamModal] = useState<'vocal' | 'instrument' | null>(null);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [showMyAttendanceReview, setShowMyAttendanceReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -397,9 +371,33 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const currentIndex = sortedEvents.findIndex(e => e.id === event.id);
   const prevEvent = currentIndex > 0 ? sortedEvents[currentIndex - 1] : null;
   const nextEvent = currentIndex < sortedEvents.length - 1 ? sortedEvents[currentIndex + 1] : null;
+  const isPast = isPastEvent(editedEvent.date, editedEvent.time);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-32">
+      {isPast && !isEditing && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-blue-600 text-white p-6 rounded-[2rem] shadow-xl flex flex-col md:flex-row items-center justify-between gap-6"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+              <CheckCircle2 size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-bold">Este evento já ocorreu!</p>
+              <p className="text-xs opacity-80">Deseja revisar e atualizar o repertório que foi efetivamente tocado?</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setIsEditing(true)}
+            className="px-6 py-3 bg-white text-blue-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-50 transition-all active:scale-95"
+          >
+            Revisar Repertório
+          </button>
+        </motion.div>
+      )}
       <header className="flex flex-col gap-6">
         <div className="flex items-center justify-between w-full">
           <BackButton onClick={onBack} />
@@ -540,7 +538,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Music size={24} className="text-emerald-600" />
               Momento da Oferta
             </h3>
-            {(isEditing || (canEdit && userProfile?.name === 'Caio')) && (
+            {canEdit && (
               <button
                 onClick={() => setShowAddSongModal('offering')}
                 className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:bg-emerald-50 px-4 py-2 rounded-xl transition-all"
@@ -584,7 +582,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Music size={24} className="text-purple-600" />
               Louvores para o Final
             </h3>
-            {(isEditing || (canEdit && userProfile?.name === 'Caio')) && (
+            {canEdit && (
               <button
                 onClick={() => setShowAddSongModal('outro')}
                 className="flex items-center gap-2 text-purple-600 font-bold text-sm hover:bg-purple-50 px-4 py-2 rounded-xl transition-all"
@@ -628,6 +626,15 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Users size={24} className="text-blue-600" />
               Escala da Equipe
             </h3>
+            {canEdit && (
+              <button
+                onClick={() => setShowAttendanceModal(true)}
+                className="text-xs font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition-all flex items-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                Gerenciar Lista
+              </button>
+            )}
           </div>
 
           <div className="bg-slate-50 rounded-[2.5rem] p-8 space-y-10">
@@ -702,18 +709,18 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
         </section>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-6 z-[90] pointer-events-none">
+      <div className={`fixed bottom-0 ${isSidebarHidden ? 'left-0' : 'md:left-80 left-0'} right-0 p-6 z-[90] pointer-events-none transition-all duration-500`}>
         <div className="max-w-4xl mx-auto flex gap-4 pointer-events-auto">
           {!isEditing ? (
             <>
               <button
-                onClick={() => setShowAttendanceModal(true)}
+                onClick={() => setShowMyAttendanceReview(true)}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-[#00153d] text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all active:scale-95"
               >
                 <CheckCircle2 size={20} />
                 <span>Confirmar Presença</span>
               </button>
-              {(canEdit && userProfile?.name === 'Caio') && (
+              {canEdit && (
                 <button
                   onClick={() => setIsEditing(true)}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-white text-[#00153d] rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all active:scale-95 border border-black/5"
@@ -1103,6 +1110,148 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 >
                   {isSaving ? 'Salvando...' : 'Salvar Presenca'}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+        {showMyAttendanceReview && userProfile && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="bg-white rounded-[3rem] w-full max-w-lg overflow-hidden apple-shadow flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-8 pb-4 flex justify-between items-start">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Confirmação de Presença</p>
+                  <h3 className="text-3xl font-headline font-extrabold text-[#00153d]">Revise sua escala</h3>
+                </div>
+                <button 
+                  onClick={() => setShowMyAttendanceReview(false)}
+                  className="p-3 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Event Summary Card */}
+              <div className="px-8 pb-6">
+                <div className="bg-slate-50 rounded-[2rem] p-6 space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm text-blue-600">
+                      <CalendarIcon size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-[#00153d]">{editedEvent.title}</p>
+                      <p className="text-xs text-slate-500 font-medium">{formatDate(editedEvent.date)} às {editedEvent.time}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="h-px bg-slate-200 w-full" />
+                  
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
+                    <span>Local</span>
+                    <span className="text-[#00153d]">{editedEvent.location || 'Manancial'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Songs Section */}
+              <div className="flex-1 overflow-y-auto px-8 space-y-6 pb-8">
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-[#00153d]/40 flex items-center gap-2">
+                    <Music size={14} />
+                    Repertório do Dia
+                  </h4>
+                  <div className="space-y-2">
+                    {editedEvent.songs.map((songId, idx) => {
+                      const song = songs.find(s => s.id === songId);
+                      if (!song) return null;
+                      return (
+                        <div key={songId} className="flex items-center gap-4 p-4 bg-white border border-black/5 rounded-2xl">
+                          <div className="text-[10px] font-black text-slate-300 w-4">
+                            {(idx + 1).toString().padStart(2, '0')}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-[#00153d] leading-none">{song.title}</p>
+                            <p className="text-[10px] text-slate-500 mt-1">{song.artist}</p>
+                          </div>
+                          <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            {song.key}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {editedEvent.songs.length === 0 && (
+                      <p className="text-sm text-slate-400 italic py-4">Nenhuma música selecionada</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Team Info */}
+                <div className="p-6 bg-blue-600/5 rounded-[2rem] border border-blue-600/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                      {userProfile.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Sua Função</p>
+                      <p className="text-sm font-bold text-[#00153d]">
+                        {team.find(m => m.name === userProfile.name)?.role || 'Membro da Equipe'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action */}
+              <div className="p-8 bg-slate-50 border-t border-black/5">
+                <button
+                  onClick={async () => {
+                    toggleAttendance(userProfile.name);
+                    // We need to wait for state update or use functional update
+                    // Since handleSaveAttendance uses editedEvent, we should call it after state settles
+                    // But here it's easier to just call a modified save function
+                    try {
+                      setIsSaving(true);
+                      const updatedAttendance = { ...(editedEvent.attendance || {}) };
+                      updatedAttendance[userProfile.name] = true;
+                      await onUpdate({ ...editedEvent, attendance: updatedAttendance });
+                      setShowMyAttendanceReview(false);
+                    } catch (error) {
+                      console.error(error);
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving || (editedEvent.attendance?.[userProfile.name] ?? false)}
+                  className={`w-full py-5 rounded-[2rem] font-bold shadow-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-3 ${
+                    editedEvent.attendance?.[userProfile.name]
+                      ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                      : 'bg-[#00153d] text-white hover:opacity-90'
+                  }`}
+                >
+                  {isSaving ? (
+                    <LoaderCircle size={24} className="animate-spin" />
+                  ) : editedEvent.attendance?.[userProfile.name] ? (
+                    <>
+                      <CheckCircle2 size={24} />
+                      <span>Sua Presença já está Confirmada!</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={24} />
+                      <span>Confirmar Minha Presença Agora</span>
+                    </>
+                  )}
+                </button>
+                {!editedEvent.attendance?.[userProfile.name] && (
+                  <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4">
+                    Ao confirmar, você se compromete com este evento
+                  </p>
+                )}
               </div>
             </motion.div>
           </div>

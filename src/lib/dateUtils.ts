@@ -36,3 +36,17 @@ export function formatDashboardDate(dateStr: string) {
     weekday: date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
   };
 }
+/**
+ * Checks if an event at a given date and time is in the past.
+ */
+export function isPastEvent(dateStr: string, timeStr: string): boolean {
+  if (!dateStr || !timeStr) return false;
+  
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  
+  const eventDate = new Date(year, month - 1, day, hours, minutes, 0);
+  const now = new Date();
+  
+  return eventDate < now;
+}

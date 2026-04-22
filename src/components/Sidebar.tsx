@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Music2, 
   Calendar, 
@@ -17,8 +18,6 @@ import { motion } from 'motion/react';
 import { Profile } from '../types';
 
 interface SidebarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   onSignOut: () => void;
   userProfile: Profile | null;
   isSidebarHidden: boolean;
@@ -27,14 +26,15 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ 
-  activeTab, 
-  setActiveTab, 
   onSignOut, 
   userProfile, 
   isSidebarHidden, 
   setIsSidebarHidden,
   showMobileNav = true
 }: SidebarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = location.pathname.split('/').pop() || 'dashboard';
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'insights', label: 'Insights', icon: TrendingUp },
@@ -73,7 +73,7 @@ export default function Sidebar({
           {menuItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => navigate(`/app/${item.id}`)}
               className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 group/item relative overflow-hidden ${
                 activeTab === item.id 
                   ? 'bg-[#00153d] text-white shadow-lg shadow-blue-900/20' 
@@ -110,7 +110,7 @@ export default function Sidebar({
           </div>
 
           <button 
-            onClick={() => setActiveTab('settings')}
+            onClick={() => navigate('/app/settings')}
             className={`w-full flex items-center gap-4 px-4 py-3 transition-all rounded-2xl group/btn ${
               activeTab === 'settings' ? 'bg-blue-100 text-blue-900 shadow-sm' : 'text-slate-500 hover:bg-white/60 hover:text-blue-600'
             }`}
@@ -142,7 +142,7 @@ export default function Sidebar({
           {menuItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => navigate(`/app/${item.id}`)}
               className={`flex flex-col items-center gap-1 transition-all duration-300 relative ${
                 activeTab === item.id ? 'text-[#00153d]' : 'text-slate-400'
               }`}
@@ -159,7 +159,7 @@ export default function Sidebar({
             </button>
           ))}
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={() => navigate('/app/settings')}
             className={`flex flex-col items-center gap-1 transition-all duration-300 ${
               activeTab === 'settings' ? 'text-[#00153d]' : 'text-slate-400'
             }`}
