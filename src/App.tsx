@@ -545,6 +545,7 @@ export default function App() {
             email={user?.email} 
             onUpdateProfile={setProfile} 
             onBack={() => navigate('/app/dashboard')}
+            onSignOut={signOut}
           />
         } />
         

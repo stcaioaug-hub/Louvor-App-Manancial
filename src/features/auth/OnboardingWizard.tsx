@@ -14,7 +14,9 @@ import {
   Speaker,
   Lock,
   Mail,
-  ShieldCheck
+  ShieldCheck,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -23,7 +25,7 @@ interface OnboardingWizardProps {
   onComplete: (updatedProfile: Profile) => void;
 }
 
-type Step = 'welcome' | 'role' | 'instrument' | 'personalize' | 'security' | 'loading';
+type Step = 'welcome' | 'role' | 'instrument' | 'personalize' | 'security' | 'loading' | 'email_sent';
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onComplete }) => {
   const [step, setStep] = useState<Step>('welcome');
@@ -37,6 +39,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
     password: '',
     confirmPassword: ''
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [updatedProfile, setUpdatedProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,6 +102,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
 
         const { error: authError } = await supabase.auth.updateUser(updateParams);
         if (authError) throw authError;
+        
+        if (updateParams.email) {
+          setUpdatedProfile(profileData as Profile);
+          setStep('email_sent');
+          setIsLoading(false);
+          return;
+        }
       }
 
       onComplete(profileData as Profile);
@@ -308,12 +320,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
                     <div className="relative group">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-manancial-blue transition-colors" size={20} />
                       <input
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         value={securityData.password}
                         onChange={(e) => setSecurityData({ ...securityData, password: e.target.value })}
                         placeholder="••••••••"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-4 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-12 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none"
+                      >
+                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </button>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -321,12 +340,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
                     <div className="relative group">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-manancial-blue transition-colors" size={20} />
                       <input
-                        type="password"
+                        type={showConfirmPassword ? "text" : "password"}
                         value={securityData.confirmPassword}
                         onChange={(e) => setSecurityData({ ...securityData, confirmPassword: e.target.value })}
                         placeholder="••••••••"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-4 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-12 pr-12 font-medium text-slate-800 placeholder:text-slate-300 focus:bg-white focus:ring-2 focus:ring-manancial-blue/20 focus:border-manancial-blue outline-none transition-all"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none"
+                      >
+                        {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -382,6 +408,28 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
               <div className="w-16 h-16 border-4 border-manancial-blue/20 border-t-manancial-blue rounded-full animate-spin mx-auto mb-6" />
               <h3 className="text-xl font-bold text-slate-800 mb-2">Configurando seu mundo...</h3>
               <p className="text-slate-500">Isso levará apenas um segundo.</p>
+            </div>
+          )}
+
+          {step === 'email_sent' && (
+            <div className="text-center animate-in slide-in-from-bottom-4 duration-500 py-6">
+              <div className="w-20 h-20 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 text-emerald-500">
+                <Check className="w-10 h-10" />
+              </div>
+              <h1 className="text-2xl font-headline font-extrabold text-slate-800 mb-4">
+                Verifique seu e-mail
+              </h1>
+              <p className="text-slate-600 text-base mb-8">
+                Um e-mail de confirmação foi enviado para <strong className="text-slate-800">{securityData.email}</strong>. 
+                Por favor, acesse sua caixa de entrada e clique no link para confirmar a alteração de e-mail.
+              </p>
+              <button
+                onClick={() => onComplete(updatedProfile!)}
+                className="w-full py-4 bg-manancial-dark text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors shadow-lg group"
+              >
+                Continuar
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
             </div>
           )}
 

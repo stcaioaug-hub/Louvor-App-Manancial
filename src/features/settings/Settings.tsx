@@ -9,7 +9,8 @@ import {
   Save, 
   LoaderCircle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  LogOut
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { BackButton } from '../../components/BackButton';
@@ -19,9 +20,10 @@ interface SettingsProps {
   email: string | undefined;
   onUpdateProfile: (newProfile: Profile) => void;
   onBack?: () => void;
+  onSignOut?: () => void;
 }
 
-export default function Settings({ profile, email, onUpdateProfile, onBack }: SettingsProps) {
+export default function Settings({ profile, email, onUpdateProfile, onBack, onSignOut }: SettingsProps) {
   const [name, setName] = useState(profile?.name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
   const [functionalRole, setFunctionalRole] = useState(profile?.functional_role || '');
@@ -168,15 +170,25 @@ export default function Settings({ profile, email, onUpdateProfile, onBack }: Se
                 </motion.div>
               )}
 
-              <div className="pt-4">
+              <div className="pt-4 flex flex-col sm:flex-row gap-4">
                 <button
                   type="submit"
                   disabled={isUpdating}
-                  className="w-full md:w-auto bg-[#00153d] text-white rounded-2xl px-10 py-4 font-bold apple-shadow hover:bg-[#001c52] transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
+                  className="w-full sm:w-auto flex-1 bg-[#00153d] text-white rounded-2xl px-10 py-4 font-bold apple-shadow hover:bg-[#001c52] transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
                 >
                   {isUpdating ? <LoaderCircle className="animate-spin" size={20} /> : <Save size={20} />}
                   Salvar Alterações
                 </button>
+                {onSignOut && (
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="w-full sm:w-auto flex-1 bg-red-50 text-red-600 rounded-2xl px-10 py-4 font-bold border border-red-100 apple-shadow hover:bg-red-100 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                  >
+                    <LogOut size={20} />
+                    Sair da Conta
+                  </button>
+                )}
               </div>
             </form>
           </div>

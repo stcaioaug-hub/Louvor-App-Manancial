@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { LoaderCircle, Mail, Lock, User, ArrowRight, Music, ShieldCheck } from 'lucide-react';
+import { LoaderCircle, Mail, Lock, User, ArrowRight, Music, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface LoginProps {
@@ -12,6 +12,7 @@ export default function Login({ onLogin }: LoginProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -138,13 +139,20 @@ export default function Login({ onLogin }: LoginProps) {
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={20} />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-white/10 border border-white/5 rounded-2xl py-4 pl-12 pr-4 font-medium text-white placeholder:text-white/30 focus:bg-white/20 focus:ring-2 focus:ring-blue-400/30 outline-none transition-all"
+                  className="w-full bg-white/10 border border-white/5 rounded-2xl py-4 pl-12 pr-12 font-medium text-white placeholder:text-white/30 focus:bg-white/20 focus:ring-2 focus:ring-blue-400/30 outline-none transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors focus:outline-none"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
               </div>
             </div>
 
