@@ -5,6 +5,31 @@ import { Toaster } from 'react-hot-toast';
 import App from './App.tsx';
 import './index.css';
 
+if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then(async (registrations) => {
+        const currentOriginRegistrations = registrations.filter((registration) =>
+          registration.scope.startsWith(window.location.origin)
+        );
+
+        if (currentOriginRegistrations.length === 0) {
+          return;
+        }
+
+        await Promise.all(currentOriginRegistrations.map((registration) => registration.unregister()));
+
+        // Dev service workers can keep stale bundles with old env values.
+        if (navigator.serviceWorker.controller && !sessionStorage.getItem('manancial-sw-cleaned')) {
+          sessionStorage.setItem('manancial-sw-cleaned', 'true');
+          window.location.reload();
+        }
+      })
+      .catch(() => undefined);
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
