@@ -24,6 +24,15 @@ interface SongRow {
   created_at: string | null;
   times_played: number | null;
   times_rehearsed: number | null;
+  rehearsal_status: string | null;
+  team_knowledge: string | null;
+  rehearsal_need: string | null;
+  attention_level: string | null;
+  technical_level: number | null;
+  attention_reasons: string[] | null;
+  is_active_repertoire: boolean | null;
+  classification_notes: string | null;
+  classified_at: string | null;
 }
 
 interface TeamMemberRow {
@@ -191,6 +200,15 @@ function mapSongRow(row: SongRow): Song {
     timesPlayed: row.times_played ?? 0,
     timesRehearsed: row.times_rehearsed ?? 0,
     createdAt: row.created_at ?? undefined,
+    rehearsalStatus: (row.rehearsal_status as any) ?? undefined,
+    teamKnowledge: (row.team_knowledge as any) ?? undefined,
+    rehearsalNeed: (row.rehearsal_need as any) ?? undefined,
+    attentionLevel: (row.attention_level as any) ?? undefined,
+    technicalLevel: row.technical_level ?? undefined,
+    attentionReasons: row.attention_reasons ?? [],
+    isActiveRepertoire: row.is_active_repertoire ?? true,
+    classificationNotes: row.classification_notes ?? undefined,
+    classifiedAt: row.classified_at ?? undefined,
   };
 }
 
@@ -225,6 +243,15 @@ function mapSongToRow(song: Song | SongDraft) {
     video_url: song.links.video?.trim() || null,
     times_played: song.timesPlayed ?? 0,
     times_rehearsed: song.timesRehearsed ?? 0,
+    rehearsal_status: song.rehearsalStatus ?? null,
+    team_knowledge: song.teamKnowledge ?? null,
+    rehearsal_need: song.rehearsalNeed ?? null,
+    attention_level: song.attentionLevel ?? null,
+    technical_level: song.technicalLevel ?? null,
+    attention_reasons: song.attentionReasons ?? null,
+    is_active_repertoire: song.isActiveRepertoire ?? true,
+    classification_notes: song.classificationNotes ?? null,
+    classified_at: song.classifiedAt ?? null,
   };
 }
 

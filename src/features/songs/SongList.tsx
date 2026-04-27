@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { 
   Search, Filter, Plus, MoreVertical, ExternalLink, Star, X, Save, FileText, 
-  Trash2, Edit2, ChevronLeft, ChevronRight, Play, Mic2, ArrowUpDown, ChevronDown 
+  Trash2, Edit2, ChevronLeft, ChevronRight, Play, Mic2, ArrowUpDown, ChevronDown, Check
 } from 'lucide-react';
 import { Song, WorshipEvent } from '../../types';
 import { transposeKey, toggleMinorKey } from '../../lib/chordTransposer';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { motion, AnimatePresence } from 'motion/react';
 import { BackButton } from '../../components/BackButton';
+import { SongClassificationWizard } from './SongClassificationWizard';
 
 interface SongEditorModalProps {
   mode: 'create' | 'edit';
@@ -318,15 +319,102 @@ interface SongListProps {
   onBack?: () => void;
 }
 
-type FilterType = 'all' | 'favorites' | 'mostPlayed' | 'mostRehearsed';
 
-export default function SongList({ songs, events, onCreateSong, onUpdateSong, onDeleteSong, onSelectSong, canEdit = true, onBack }: SongListProps) {
+export function getSongReadinessLabel(song: Song): string {
+  if (song.isActiveRepertoire === false) return 'Fora do repertório ativo';
+  if (
+    song.rehearsalStatus === 'rehearsed' &&
+    song.teamKnowledge === 'we_know' &&
+    song.rehearsalNeed === 'ready' &&
+    song.attentionLevel === 'normal'
+  ) {
+    return 'Pronto para culto';
+  }
+  if (
+    song.teamKnowledge === 'we_know' &&
+    song.attentionLevel &&
+    ['attention', 'high_attention'].includes(song.attentionLevel)
+  ) {
+    return 'Sabemos, mas exige atenção';
+  }
+  if (
+    song.teamKnowledge === 'we_know' &&
+    song.rehearsalNeed === 'light_rehearsal'
+  ) {
+    return 'Sabemos, mas precisa revisar';
+  }
+  if (
+    song.rehearsalStatus === 'not_rehearsed' &&
+    song.teamKnowledge === 'we_know'
+  ) {
+    return 'Não ensaiado oficialmente, mas conhecido';
+  }
+  if (
+    song.teamKnowledge === 'we_do_not_know' &&
+    song.technicalLevel &&
+    song.technicalLevel >= 7
+  ) {
+    return 'Novo e técnico — precisa de preparo';
+  }
+  if (
+    song.rehearsalStatus === 'not_rehearsed' &&
+    song.teamKnowledge === 'we_do_not_know'
+  ) {
+    return 'Novo para tirar';
+  }
+  return 'A classificar';
+}
+
+export function getRehearsalPriority(song: Song): 'low' | 'medium' | 'high' | 'urgent' {
+  if (song.isActiveRepertoire === false) return 'low';
+  if (
+    song.rehearsalNeed === 'intensive_rehearsal' ||
+    (song.teamKnowledge === 'we_do_not_know' && (song.technicalLevel ?? 0) >= 7)
+  ) {
+    return 'urgent';
+  }
+  if (
+    song.rehearsalNeed === 'needs_rehearsal' ||
+    song.attentionLevel === 'high_attention'
+  ) {
+    return 'high';
+  }
+  if (
+    song.rehearsalNeed === 'light_rehearsal' ||
+    song.attentionLevel === 'attention'
+  ) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+type FilterType = 
+  | 'all' 
+  | 'active'
+  | 'inactive'
+  | 'ready_for_service'
+  | 'needs_rehearsal'
+  | 'intensive_rehearsal'
+  | 'we_know'
+  | 'we_do_not_know'
+  | 'attention'
+  | 'high_attention'
+  | 'technical_7_plus'
+  | 'new_to_learn'
+  | 'review_this_month'
+  | 'favorites' 
+  | 'mostPlayed' 
+  | 'mostRehearsed';
+
+
+export default function SongList({ songs, events, onCreateSong, onUpdateSong: onUpdateSongProp, onDeleteSong, onSelectSong, canEdit = true, onBack }: SongListProps) {
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [songToDelete, setSongToDelete] = useState<Song | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   const filteredSongs = useMemo(() => {
     let result = [...songs].filter(
@@ -335,7 +423,31 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
         song.artist.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    if (filterType === 'favorites') {
+    if (filterType === 'active') {
+      result = result.filter(s => s.isActiveRepertoire !== false);
+    } else if (filterType === 'inactive') {
+      result = result.filter(s => s.isActiveRepertoire === false);
+    } else if (filterType === 'ready_for_service') {
+      result = result.filter(s => getSongReadinessLabel(s) === 'Pronto para culto');
+    } else if (filterType === 'needs_rehearsal') {
+      result = result.filter(s => s.rehearsalNeed === 'needs_rehearsal');
+    } else if (filterType === 'intensive_rehearsal') {
+      result = result.filter(s => s.rehearsalNeed === 'intensive_rehearsal');
+    } else if (filterType === 'we_know') {
+      result = result.filter(s => s.teamKnowledge === 'we_know');
+    } else if (filterType === 'we_do_not_know') {
+      result = result.filter(s => s.teamKnowledge === 'we_do_not_know');
+    } else if (filterType === 'attention') {
+      result = result.filter(s => s.attentionLevel === 'attention');
+    } else if (filterType === 'high_attention') {
+      result = result.filter(s => s.attentionLevel === 'high_attention');
+    } else if (filterType === 'technical_7_plus') {
+      result = result.filter(s => (s.technicalLevel || 0) >= 7);
+    } else if (filterType === 'new_to_learn') {
+      result = result.filter(s => getSongReadinessLabel(s) === 'Novo para tirar');
+    } else if (filterType === 'review_this_month') {
+      result = result.filter(s => getSongReadinessLabel(s) === 'Revisar todo mês' || (s.attentionLevel === 'high_attention' && (s.technicalLevel || 0) >= 7));
+    } else if (filterType === 'favorites') {
       result = result.filter(s => s.isFavorite);
     } else if (filterType === 'mostPlayed') {
       result = result.sort((a, b) => (b.timesPlayed || 0) - (a.timesPlayed || 0));
@@ -347,16 +459,16 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
   }, [searchQuery, songs, filterType]);
 
   const updateProficiency = async (song: Song, level: number) => {
-    await onUpdateSong({ ...song, proficiency: level });
+    await onUpdateSongProp({ ...song, proficiency: level });
   };
 
   const toggleFavorite = async (song: Song) => {
-    await onUpdateSong({ ...song, isFavorite: !song.isFavorite });
+    await onUpdateSongProp({ ...song, isFavorite: !song.isFavorite });
   };
 
   const updateSongKey = async (song: Song, semitones: number) => {
     const newKey = transposeKey(song.key, semitones);
-    await onUpdateSong({ ...song, key: newKey });
+    await onUpdateSongProp({ ...song, key: newKey });
   };
 
   const handleSaveEdit = async (updatedSong: Song) => {
@@ -367,7 +479,7 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
       return;
     }
 
-    await onUpdateSong(updatedSong);
+    await onUpdateSongProp(updatedSong);
   };
 
   return (
@@ -412,6 +524,18 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
+                onClick={() => setShowWizard(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-widest shadow-lg hover:opacity-90 transition-all"
+                title="Classificar Repertório"
+              >
+                <Star size={18} />
+                <span className="hidden lg:inline">Classificar Repertório</span>
+              </motion.button>
+            )}
+            {canEdit && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   setIsCreating(true);
                   setEditingSong(createEmptySong());
@@ -435,41 +559,28 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
             className="overflow-hidden"
           >
             <div className="flex flex-wrap gap-4 p-6 bg-white/40 backdrop-blur-md border border-white/60 rounded-[2.5rem] mb-8 shadow-inner shadow-blue-900/[0.01]">
-              <button
-                onClick={() => setFilterType('all')}
-                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  filterType === 'all' ? 'bg-[#00153d] text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
-                }`}
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as FilterType)}
+                className="w-full sm:w-auto px-6 py-3 bg-white border border-black/5 rounded-2xl text-sm font-bold text-[#00153d] focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
               >
-                Todos
-              </button>
-              <button
-                onClick={() => setFilterType('favorites')}
-                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-                  filterType === 'favorites' ? 'bg-yellow-500 text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
-                }`}
-              >
-                <Star size={14} fill={filterType === 'favorites' ? "currentColor" : "none"} />
-                Favoritos
-              </button>
-              <button
-                onClick={() => setFilterType('mostPlayed')}
-                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-                  filterType === 'mostPlayed' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
-                }`}
-              >
-                <Play size={14} fill={filterType === 'mostPlayed' ? "currentColor" : "none"} />
-                Mais Tocados
-              </button>
-              <button
-                onClick={() => setFilterType('mostRehearsed')}
-                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-                  filterType === 'mostRehearsed' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white/80 text-slate-500 hover:bg-white'
-                }`}
-              >
-                <Mic2 size={14} />
-                Mais Ensaiados
-              </button>
+                <option value="all">Todos os Louvores</option>
+                <option value="active">Repertório Ativo</option>
+                <option value="inactive">Fora do Repertório Ativo</option>
+                <option value="ready_for_service">✅ Prontos para culto</option>
+                <option value="needs_rehearsal">⚠️ Precisam de ensaio</option>
+                <option value="intensive_rehearsal">🚨 Precisam de muito ensaio</option>
+                <option value="we_know">🎸 Sabemos tocar</option>
+                <option value="we_do_not_know">📚 Não sabemos ainda</option>
+                <option value="attention">👀 Precisam de atenção</option>
+                <option value="high_attention">🔥 Atenção alta</option>
+                <option value="technical_7_plus">🎸 Nível técnico 7+</option>
+                <option value="new_to_learn">🆕 Novos para tirar</option>
+                <option value="review_this_month">📅 Revisar este mês</option>
+                <option value="favorites">⭐ Favoritos</option>
+                <option value="mostPlayed">▶️ Mais Tocados</option>
+                <option value="mostRehearsed">🎤 Mais Ensaiados</option>
+              </select>
             </div>
           </motion.div>
         )}
@@ -477,11 +588,12 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
 
       <div className="bg-white rounded-[2.5rem] apple-shadow overflow-hidden border border-black/5">
         <div className="hidden md:grid grid-cols-12 px-8 py-5 bg-slate-50/50 border-b border-black/5 text-[10px] font-black uppercase tracking-widest text-slate-400">
-          <div className="col-span-4 flex items-center gap-2">
+          <div className="col-span-3 flex items-center gap-2">
             Titulo / Artista 
             <ArrowUpDown size={12} className="opacity-50" />
           </div>
-          <div className="col-span-2 text-center uppercase">Tom</div>
+          <div className="col-span-2 text-center uppercase">Classificacao</div>
+          <div className="col-span-1 text-center uppercase">Tom</div>
           <div className="col-span-2 text-center uppercase">Metricas</div>
           <div className="col-span-2 text-center uppercase">Proficiencia</div>
           <div className="col-span-2 text-right uppercase">Acoes</div>
@@ -497,7 +609,7 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
               className="flex flex-col md:grid md:grid-cols-12 items-start md:items-center px-6 md:px-8 py-5 hover:bg-slate-50 transition-all group gap-4 md:gap-0"
             >
               {/* Title & Artist & Favorite */}
-              <div className="col-span-4 flex items-center gap-4 w-full">
+              <div className="col-span-3 flex items-center gap-4 w-full">
                 <motion.button
                   whileTap={{ scale: 0.8 }}
                   onClick={() => void toggleFavorite(song)}
@@ -520,11 +632,39 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
                       <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">{song.bpm} BPM</span>
                     )}
                   </div>
+                  <div className="mt-1 flex gap-1">
+                    {getSongReadinessLabel(song) !== 'A classificar' && (
+                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest border ${
+                        getSongReadinessLabel(song) === 'Pronto para culto' ? 'bg-green-50 text-green-600 border-green-200' :
+                        getSongReadinessLabel(song) === 'Sabemos, mas exige atenção' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' :
+                        getSongReadinessLabel(song) === 'Sabemos, mas precisa revisar' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                        getSongReadinessLabel(song) === 'Novo e técnico — precisa de preparo' ? 'bg-red-50 text-red-600 border-red-200' :
+                        'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}>
+                        {getSongReadinessLabel(song)}
+                      </span>
+                    )}
+                  </div>
                 </button>
               </div>
 
-              {/* In-table Key Editing */}
+              {/* Classificação */}
               <div className="col-span-2 flex justify-center w-full md:w-auto">
+                {song.classifiedAt ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-50 text-green-600 border border-green-100">
+                    <Check size={14} />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Revisado</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-600 border border-amber-100">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Pendente</span>
+                  </div>
+                )}
+              </div>
+
+              {/* In-table Key Editing */}
+              <div className="col-span-1 flex justify-center w-full md:w-auto">
                 <div className="flex items-center bg-blue-50/50 p-1.5 rounded-2xl border border-blue-100/50 group/key">
                   <button 
                     onClick={() => canEdit && void updateSongKey(song, -1)}
@@ -656,6 +796,21 @@ export default function SongList({ songs, events, onCreateSong, onUpdateSong, on
             }}
             onSave={handleSaveEdit}
             onDelete={onDeleteSong}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showWizard && (
+          <SongClassificationWizard
+            songs={songs}
+            onUpdateSong={async (songId, updates) => {
+              const song = songs.find(s => s.id === songId);
+              if (song) {
+                await onUpdateSongProp({ ...song, ...updates });
+              }
+            }}
+            onClose={() => setShowWizard(false)}
           />
         )}
       </AnimatePresence>

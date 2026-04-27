@@ -10,6 +10,26 @@ export interface Profile {
   onboarding_completed: boolean;
 }
 
+export type RehearsalStatus =
+  | 'not_classified'
+  | 'rehearsed'
+  | 'not_rehearsed';
+export type TeamKnowledge =
+  | 'not_classified'
+  | 'we_know'
+  | 'partial'
+  | 'we_do_not_know';
+export type RehearsalNeed =
+  | 'not_classified'
+  | 'ready'
+  | 'light_rehearsal'
+  | 'needs_rehearsal'
+  | 'intensive_rehearsal';
+export type AttentionLevel =
+  | 'normal'
+  | 'attention'
+  | 'high_attention';
+
 export interface Song {
 
   id: string;
@@ -30,6 +50,15 @@ export interface Song {
     video?: string;
   };
   createdAt?: string;
+  rehearsalStatus?: RehearsalStatus;
+  teamKnowledge?: TeamKnowledge;
+  rehearsalNeed?: RehearsalNeed;
+  attentionLevel?: AttentionLevel;
+  technicalLevel?: number;
+  attentionReasons?: string[];
+  isActiveRepertoire?: boolean;
+  classificationNotes?: string;
+  classifiedAt?: string;
 }
 
 export type EventType = 'service' | 'rehearsal';
