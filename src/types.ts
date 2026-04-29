@@ -59,6 +59,10 @@ export interface Song {
   isActiveRepertoire?: boolean;
   classificationNotes?: string;
   classifiedAt?: string;
+  cover_url?: string;
+  defaultLeadVocal?: string;
+  originalKey?: string;
+  vocalUrl?: string;
 }
 
 export type EventType = 'service' | 'rehearsal';
@@ -83,6 +87,7 @@ export interface WorshipEvent {
   attendance?: {
     [userId: string]: boolean;
   };
+  songVocals?: Record<string, string>;
 }
 
 export interface TeamMember {
@@ -103,4 +108,36 @@ export interface RehearsalReport {
   sentiment: string;
   observations: string;
   created_at?: string;
+}
+
+export interface SongSuggestion {
+  id: string;
+  title: string;
+  artist: string;
+  youtube_url?: string;
+  notes?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  suggested_by?: string;
+  suggested_by_name?: string;
+  created_at?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  target_role?: string;
+  target_user?: string;
+  title: string;
+  message: string;
+  type: string;
+  created_by?: string;
+  created_at?: string;
+  isRead?: boolean; // Front-end only field
+}
+
+export interface UserSongStudy {
+  id: string;
+  user_id: string;
+  song_id: string;
+  is_completed: boolean;
+  created_at: string;
 }

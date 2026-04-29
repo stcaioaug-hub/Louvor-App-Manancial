@@ -23,12 +23,16 @@ CREATE TABLE IF NOT EXISTS songs (
   chords_url TEXT,
   lyrics_url TEXT,
   video_url TEXT,
+  cover_url TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE songs
 ADD COLUMN IF NOT EXISTS difficulty INTEGER DEFAULT 0 CHECK (difficulty >= 0 AND difficulty <= 5);
+
+ALTER TABLE songs
+ADD COLUMN IF NOT EXISTS cover_url TEXT;
 
 -- 3. TEAM MEMBERS TABLE
 CREATE TABLE IF NOT EXISTS team_members (

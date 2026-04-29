@@ -5,6 +5,9 @@
 ALTER TABLE public.songs
 ADD COLUMN IF NOT EXISTS difficulty INTEGER DEFAULT 0 CHECK (difficulty >= 0 AND difficulty <= 5);
 
+ALTER TABLE public.songs
+ADD COLUMN IF NOT EXISTS cover_url TEXT;
+
 ALTER TABLE public.worship_events
 ADD COLUMN IF NOT EXISTS attendance JSONB DEFAULT '{}'::JSONB;
 

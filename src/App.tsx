@@ -20,9 +20,12 @@ import EventDetail from './features/events/EventDetail';
 import TeamList from './features/team/TeamList';
 import Login from './features/auth/Login';
 import Settings from './features/settings/Settings';
+import ProfileMenu from './features/settings/ProfileMenu';
 import Insights from './features/insights/Insights';
 import { OnboardingWizard } from './features/auth/OnboardingWizard';
 import NewSongs from './features/songs/NewSongs';
+import SongSuggestions from './features/songs/SongSuggestions';
+import StudyHub from './features/study/StudyHub';
 import { supabase } from './lib/supabase';
 import { getProfile, signOut } from './lib/auth';
 import {
@@ -43,9 +46,13 @@ import {
   updateSong,
   updateTeamMember,
   createRehearsalReport,
+  markNotificationAsRead,
+  toggleStudySong,
+  updateStudySongStatus,
 } from './lib/appData';
-import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport } from './types';
+import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from './types';
 import { User } from '@supabase/supabase-js';
+import { Toaster } from 'react-hot-toast';
 
 // Polyfill for useEffectEvent (experimental in React 19)
 function useEvent<T extends (...args: any[]) => any>(fn: T): T {
@@ -79,6 +86,9 @@ export default function App() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [events, setEvents] = useState<WorshipEvent[]>([]);
   const [rehearsalReports, setRehearsalReports] = useState<RehearsalReport[]>([]);
+  const [songSuggestions, setSongSuggestions] = useState<SongSuggestion[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [userSongStudy, setUserSongStudy] = useState<UserSongStudy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
@@ -99,22 +109,32 @@ export default function App() {
     []
   );
 
+  const isFetchingRef = useRef(false);
+
   const applyAppData = useEvent((data: {
     songs: Song[];
     team: TeamMember[];
     events: WorshipEvent[];
     rehearsalReports: RehearsalReport[];
+    songSuggestions: SongSuggestion[];
+    notifications: AppNotification[];
+    userSongStudy: UserSongStudy[];
   }) => {
     startTransition(() => {
       setSongs(data.songs);
       setTeam(data.team);
       setEvents(data.events);
       setRehearsalReports(data.rehearsalReports || []);
+      setSongSuggestions(data.songSuggestions || []);
+      setNotifications(data.notifications || []);
+      setUserSongStudy(data.userSongStudy || []);
     });
   });
 
   const loadData = useEvent(
     async ({ withLoading = false, allowSeed = false }: { withLoading?: boolean; allowSeed?: boolean } = {}) => {
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
       try {
         if (withLoading) {
           setIsLoading(true);
@@ -139,6 +159,7 @@ export default function App() {
       } catch (error) {
         setErrorMessage(formatErrorMessage(error));
       } finally {
+        isFetchingRef.current = false;
         if (withLoading) {
           setIsLoading(false);
         }
@@ -234,14 +255,19 @@ export default function App() {
   useEffect(() => {
     void loadData({ withLoading: true, allowSeed: true });
 
+    let debounceTimer: ReturnType<typeof setTimeout>;
     const channel = subscribeToAppData(() => {
-      void loadData();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void loadData();
+      }, 1000); // 1 second debounce to avoid flooding
     });
 
     return () => {
+      clearTimeout(debounceTimer);
       unsubscribeFromAppData(channel);
     };
-  }, []);
+  }, [loadData]);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -405,6 +431,25 @@ export default function App() {
     }
   };
 
+  const handleToggleStudySong = async (songId: string) => {
+    try {
+      if (!user) return;
+      await toggleStudySong(user.id, songId);
+      // Data will refresh via subscription
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+    }
+  };
+
+  const handleUpdateStudyStatus = async (studyId: string, isCompleted: boolean) => {
+    try {
+      await updateStudySongStatus(studyId, isCompleted);
+      // Data will refresh via subscription
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+    }
+  };
+
   const handleDeleteEvent = async (id: string) => {
     try {
       setErrorMessage(null);
@@ -439,6 +484,8 @@ export default function App() {
         canEdit={isMinister}
         userProfile={effectiveProfile}
         isSidebarHidden={isSidebarHidden}
+        userSongStudy={userSongStudy}
+        onToggleStudySong={handleToggleStudySong}
       />
     );
   };
@@ -474,10 +521,17 @@ export default function App() {
             team={team}
             events={events}
             rehearsalReports={rehearsalReports}
+            notificationsData={notifications}
             onSelectEvent={(id) => navigate(`/app/events/${id}`)}
             onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
             onCreateRehearsalReport={handleCreateRehearsalReport}
+            onMarkNotificationAsRead={async (notifId) => {
+               if (user) await markNotificationAsRead(user.id, notifId);
+            }}
             userProfile={effectiveProfile}
+            userSongStudy={userSongStudy}
+            onToggleStudySong={handleToggleStudySong}
+            onUpdateStudyStatus={handleUpdateStudyStatus}
           />
         } />
         
@@ -525,8 +579,40 @@ export default function App() {
           <NewSongs
             songs={songs}
             events={events}
+            suggestions={songSuggestions}
+            userProfile={effectiveProfile}
             onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
             onBack={() => navigate('/app/dashboard')}
+            onGoToStudy={() => navigate('/app/study')}
+            onSuggestionCreated={(createdSuggestion) => {
+              setSongSuggestions((previous) => [
+                createdSuggestion,
+                ...previous.filter((suggestion) => suggestion.id !== createdSuggestion.id),
+              ]);
+            }}
+            onCreateSong={handleCreateSong}
+          />
+        } />
+
+        <Route path="/app/suggestions" element={
+          <SongSuggestions
+            suggestions={songSuggestions}
+            userProfile={effectiveProfile}
+            onBack={() => navigate('/app/dashboard')}
+            onCreateSong={handleCreateSong}
+            onSuggestionCreated={(createdSuggestion) => {
+              setSongSuggestions((previous) => [
+                createdSuggestion,
+                ...previous.filter((suggestion) => suggestion.id !== createdSuggestion.id),
+              ]);
+            }}
+            onSuggestionUpdated={(id, updates) => {
+              setSongSuggestions((previous) =>
+                previous.map((suggestion) =>
+                  suggestion.id === id ? { ...suggestion, ...updates } : suggestion
+                )
+              );
+            }}
           />
         } />
         
@@ -539,13 +625,32 @@ export default function App() {
           />
         } />
         
+        <Route path="/app/profile" element={
+          <ProfileMenu 
+            onBack={() => navigate('/app/dashboard')}
+          />
+        } />
+        
         <Route path="/app/settings" element={
           <Settings 
             profile={effectiveProfile} 
             email={user?.email} 
             onUpdateProfile={setProfile} 
-            onBack={() => navigate('/app/dashboard')}
+            onBack={() => navigate('/app/profile')}
             onSignOut={signOut}
+          />
+        } />
+        
+        <Route path="/app/study" element={
+          <StudyHub
+            songs={songs}
+            events={events}
+            userProfile={effectiveProfile}
+            userSongStudy={userSongStudy}
+            onToggleStudySong={handleToggleStudySong}
+            onUpdateStudyStatus={handleUpdateStudyStatus}
+            onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
+            onBack={() => navigate('/app/dashboard')}
           />
         } />
         
@@ -667,6 +772,7 @@ export default function App() {
         )}
       </main>
 
+      <Toaster position="top-right" />
     </div>
   );
 }

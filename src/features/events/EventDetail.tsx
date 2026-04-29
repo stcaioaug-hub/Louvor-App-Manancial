@@ -19,6 +19,7 @@ import {
   LoaderCircle,
   Eye,
   Mic,
+  Search,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatFullDate, isPastEvent } from '../../lib/dateUtils';
@@ -31,6 +32,8 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -40,7 +43,8 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { WorshipEvent, Song, TeamMember, Profile } from '../../types';
+import { WorshipEvent, Song, TeamMember, Profile, UserSongStudy } from '../../types';
+import toast from 'react-hot-toast';
 
 import { transposeKey, toggleMinorKey } from '../../lib/chordTransposer';
 
@@ -58,6 +62,8 @@ interface EventDetailProps {
   canEdit?: boolean;
   userProfile?: Profile | null;
   isSidebarHidden?: boolean;
+  userSongStudy?: UserSongStudy[];
+  onToggleStudySong?: (songId: string) => Promise<void>;
 }
 
 interface SortableSongItemProps {
@@ -71,9 +77,107 @@ interface SortableSongItemProps {
   key?: string | number;
   index: number;
   onExpand: (id: string) => void;
+  isStudying: boolean;
+  onToggleStudy: (songId: string) => void;
+  vocalists?: string[];
+  assignedVocal?: string;
+  onAssignVocal?: (vocal: string) => void;
 }
 
-function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectSong, type, index, onExpand }: SortableSongItemProps) {
+const AVATAR_COLORS = [
+  'bg-blue-500',
+  'bg-emerald-500',
+  'bg-amber-500',
+  'bg-rose-500',
+  'bg-indigo-500',
+  'bg-purple-500',
+  'bg-cyan-500',
+  'bg-orange-500',
+];
+
+const getAvatarColor = (name: string) => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+};
+
+function DroppableZone({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef} className={className}>
+      {children}
+    </div>
+  );
+}
+
+function AttendanceAvatarStack({ confirmedMembers }: { confirmedMembers: { name: string; avatar?: string }[] }) {
+  const maxDisplay = 5;
+  const displayed = confirmedMembers.slice(0, maxDisplay);
+  const remaining = confirmedMembers.length - maxDisplay;
+
+  if (confirmedMembers.length === 0) return null;
+
+  return (
+    <div className="flex -space-x-2.5 md:-space-x-3 overflow-hidden">
+      <AnimatePresence mode="popLayout">
+        {displayed.map((member, index) => (
+          <motion.div
+            key={member.name}
+            initial={{ opacity: 0, scale: 0.5, x: -10 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.5, x: 10 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25, delay: index * 0.05 }}
+            className="relative inline-block"
+            style={{ zIndex: confirmedMembers.length - index }}
+            title={member.name}
+          >
+            {member.avatar ? (
+              <img
+                src={member.avatar}
+                alt={member.name}
+                className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-white shadow-sm object-cover ring-1 ring-black/5"
+              />
+            ) : (
+              <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-[10px] md:text-xs font-black text-white ${getAvatarColor(member.name)} ring-1 ring-black/5`}>
+                {member.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+      {remaining > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="relative inline-block z-0"
+        >
+          <div className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-white shadow-sm bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 ring-1 ring-black/5">
+            +{remaining}
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+function SortableSongItem({ 
+  id, 
+  song, 
+  isEditing, 
+  onRemove, 
+  onEditSong, 
+  onSelectSong, 
+  type, 
+  index, 
+  onExpand, 
+  isStudying, 
+  onToggleStudy,
+  vocalists = [],
+  assignedVocal,
+  onAssignVocal
+}: SortableSongItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style = {
@@ -119,7 +223,23 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
         </div>
         <div className="flex-1 min-w-0">
           <h5 className="font-headline font-bold text-sm md:text-base text-[#00153d] truncate group-hover:text-blue-600 transition-colors tracking-tight">{song.title}</h5>
-          <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate opacity-70 italic">{song.artist}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate opacity-70 italic">{song.artist}</p>
+            {isEditing && vocalists.length > 0 && (
+              <select
+                value={assignedVocal || ''}
+                onChange={(e) => onAssignVocal?.(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="text-[9px] font-bold bg-white border border-black/5 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500/20 text-blue-600"
+              >
+                <option value="">Voz...</option>
+                {vocalists.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+                <option value="Todos">Todos</option>
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
@@ -128,7 +248,25 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
           {song.key}
         </div>
 
-        {isEditing ? (
+        <div className="flex items-center gap-1.5 md:gap-2">
+          {!isEditing && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleStudy(song.id);
+              }}
+              className={`p-1.5 md:p-2 rounded-xl transition-all ${
+                isStudying 
+                  ? 'bg-amber-100 text-amber-600 shadow-sm' 
+                  : 'bg-slate-50 text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+              }`}
+              title={isStudying ? "Remover do estudo" : "Marcar para estudar"}
+            >
+              <Music size={14} className="md:w-4 md:h-4" />
+            </button>
+          )}
+
+          {isEditing ? (
           <div className="flex items-center gap-0.5 md:gap-1">
             <button
               onClick={() => onEditSong(song)}
@@ -144,7 +282,14 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-1 md:gap-2">
+          <div className="flex flex-col items-end gap-1">
+            {assignedVocal && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-[9px] font-bold border border-blue-100">
+                <Mic size={10} />
+                <span>{assignedVocal}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1 md:gap-2">
             {song.links.chords && (
               <a
                 href={song.links.chords}
@@ -175,14 +320,16 @@ function SortableSongItem({ id, song, isEditing, onRemove, onEditSong, onSelectS
             >
               <Eye size={16} />
             </button>
+            </div>
           </div>
         )}
       </div>
     </div>
-  );
+  </div>
+);
 }
 
-export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false }: EventDetailProps) {
+export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false, userSongStudy = [], onToggleStudySong }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedEvent, setEditedEvent] = useState<WorshipEvent>({ ...event });
   const [editingSongMetadata, setEditingSongMetadata] = useState<Song | null>(null);
@@ -192,6 +339,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showMyAttendanceReview, setShowMyAttendanceReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [songSearchQuery, setSongSearchQuery] = useState('');
 
   useEffect(() => {
     setEditedEvent({ ...event });
@@ -209,6 +357,15 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
     [editedEvent.team]
   );
 
+  const filteredSongs = useMemo(() => {
+    if (!songSearchQuery) return songs;
+    const query = songSearchQuery.toLowerCase();
+    return songs.filter(song => 
+      song.title.toLowerCase().includes(query) || 
+      song.artist.toLowerCase().includes(query)
+    );
+  }, [songs, songSearchQuery]);
+
   const allConfirmed = scaledMembers.length > 0 && scaledMembers.every((member) => editedEvent.attendance?.[member]);
 
   const handleQuickSave = async (newEvent: WorshipEvent) => {
@@ -222,16 +379,75 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
     }
   };
 
-  const handleDragEnd = (dragEvent: DragEndEvent, listType: 'main' | 'offering' | 'outro') => {
-    const { active, over } = dragEvent;
+  const findContainer = (id: string) => {
+    if (id === 'main' || id === 'offering' || id === 'outro') return id;
+    if (editedEvent.songs.includes(id)) return 'main';
+    if (editedEvent.offeringSongs?.includes(id)) return 'offering';
+    if (editedEvent.outroSongs?.includes(id)) return 'outro';
+    return null;
+  };
 
-    if (over && active.id !== over.id) {
-      const listName = listType === 'main' ? 'songs' : listType === 'offering' ? 'offeringSongs' : 'outroSongs';
-      const list = editedEvent[listName] || [];
-      const oldIndex = list.indexOf(active.id as string);
-      const newIndex = list.indexOf(over.id as string);
-      const newList = arrayMove(list, oldIndex, newIndex);
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    const overId = over?.id;
 
+    if (!overId || active.id === overId) return;
+
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(overId as string);
+
+    if (!activeContainer || !overContainer || activeContainer === overContainer) return;
+
+    setEditedEvent((prev) => {
+      const activeListName = activeContainer === 'main' ? 'songs' : activeContainer === 'offering' ? 'offeringSongs' : 'outroSongs';
+      const overListName = overContainer === 'main' ? 'songs' : overContainer === 'offering' ? 'offeringSongs' : 'outroSongs';
+      
+      const activeItems = [...(prev[activeListName] || [])];
+      const overItems = [...(prev[overListName] || [])];
+
+      const activeIndex = activeItems.indexOf(active.id as string);
+      const overIndex = overItems.indexOf(overId as string);
+
+      let newIndex;
+      if (overIndex >= 0) {
+        newIndex = overIndex;
+      } else {
+        newIndex = overItems.length;
+      }
+
+      const updatedActive = activeItems.filter((id) => id !== active.id);
+      const updatedOver = [
+        ...overItems.slice(0, newIndex),
+        active.id as string,
+        ...overItems.slice(newIndex),
+      ];
+
+      return {
+        ...prev,
+        [activeListName]: updatedActive,
+        [overListName]: updatedOver,
+      };
+    });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    const overId = over?.id;
+
+    if (!overId) return;
+
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(overId as string);
+
+    if (!activeContainer || !overContainer || activeContainer !== overContainer) return;
+
+    const listName = activeContainer === 'main' ? 'songs' : activeContainer === 'offering' ? 'offeringSongs' : 'outroSongs';
+    const list = editedEvent[listName] || [];
+    const activeIndex = list.indexOf(active.id as string);
+    const overIndex = list.indexOf(overId as string);
+
+    if (activeIndex !== overIndex) {
+      const newList = arrayMove(list, activeIndex, overIndex);
       handleQuickSave({ ...editedEvent, [listName]: newList });
     }
   };
@@ -241,8 +457,10 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
       setIsSaving(true);
       await onUpdate(editedEvent);
       setIsEditing(false);
-    } catch {
-      return;
+      toast.success('Evento atualizado com sucesso!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao salvar: ' + (error.message || 'Verifique sua conexão.'));
     } finally {
       setIsSaving(false);
     }
@@ -253,8 +471,10 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
       setIsSaving(true);
       await onUpdate(editedEvent);
       setShowAttendanceModal(false);
-    } catch {
-      return;
+      toast.success('Presenças salvas com sucesso!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao salvar presenças: ' + (error.message || 'Verifique sua conexão.'));
     } finally {
       setIsSaving(false);
     }
@@ -280,6 +500,16 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   };
 
   const formatDate = (dateStr: string) => formatFullDate(dateStr);
+  
+  const handleAssignVocal = (songId: string, vocalName: string) => {
+    setEditedEvent(prev => ({
+      ...prev,
+      songVocals: {
+        ...(prev.songVocals || {}),
+        [songId]: vocalName
+      }
+    }));
+  };
 
   const removeSong = (id: string, listType: 'main' | 'offering' | 'outro') => {
     const listName = listType === 'main' ? 'songs' : listType === 'offering' ? 'offeringSongs' : 'outroSongs';
@@ -298,6 +528,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
     const newList = [...list, id];
     handleQuickSave({ ...editedEvent, [listName]: newList });
     setShowAddSongModal(null);
+    setSongSearchQuery('');
   };
 
   const removeTeamMember = (name: string, type: 'vocal' | 'instrument', instrumentKey?: string) => {
@@ -373,9 +604,42 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const nextEvent = currentIndex < sortedEvents.length - 1 ? sortedEvents[currentIndex + 1] : null;
   const isPast = isPastEvent(editedEvent.date, editedEvent.time);
 
+  const confirmedMembers = useMemo(() => {
+    if (!editedEvent.attendance) return [];
+    
+    // Get all unique names that are confirmed (true)
+    return Object.entries(editedEvent.attendance)
+      .filter(([_, isPresent]) => isPresent)
+      .map(([name]) => {
+        // Use robust matching to find member in team
+        const normalizedSearch = name.trim().toLowerCase();
+        const member = team.find(m => m.name.trim().toLowerCase() === normalizedSearch);
+        
+        return {
+          name: member?.name || name.trim(),
+          avatar: member?.avatar,
+        };
+      });
+  }, [editedEvent.attendance, team]);
+
+  const isConfirmed = (name: string) => {
+    if (!editedEvent.attendance) return false;
+    const normalized = name.trim().toLowerCase();
+    return Object.entries(editedEvent.attendance).some(
+      ([n, present]) => present && n.trim().toLowerCase() === normalized
+    );
+  };
+
+  const checkIsStudying = (songId: string) => userSongStudy.some(s => s.song_id === songId);
+  const handleToggleStudy = (songId: string) => {
+    if (onToggleStudySong) {
+      void onToggleStudySong(songId);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-32">
-      {isPast && !isEditing && (
+      {isPast && !isEditing && canEdit && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -491,6 +755,19 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
       </header>
 
       <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-10 apple-shadow border border-white/40 space-y-12">
+        {isEditing && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-blue-50/50 border border-blue-100/50 p-4 rounded-3xl flex items-center gap-3 text-[#00153d] text-xs font-bold"
+          >
+            <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+              <GripVertical size={16} />
+            </div>
+            <span>Dica: Arraste os louvores entre as seções para mudar o momento do culto.</span>
+          </motion.div>
+        )}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
         {/* Repertoire Content */}
 
         <section className="space-y-6">
@@ -510,9 +787,9 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             )}
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'main')}>
+          <DroppableZone id="main">
             <SortableContext items={editedEvent.songs} strategy={verticalListSortingStrategy}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[50px]">
                 {editedEvent.songs.map((songId, index) => (
                   <SortableSongItem
                     key={songId}
@@ -525,11 +802,16 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     onExpand={setExpandedSongId}
                     type="main"
                     index={index}
+                    isStudying={checkIsStudying(songId)}
+                    onToggleStudy={handleToggleStudy}
+                    vocalists={editedEvent.team.vocal}
+                    assignedVocal={editedEvent.songVocals?.[songId]}
+                    onAssignVocal={(vocal) => handleAssignVocal(songId, vocal)}
                   />
                 ))}
               </div>
             </SortableContext>
-          </DndContext>
+          </DroppableZone>
         </section>
 
         <section className="space-y-6">
@@ -538,7 +820,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Music size={24} className="text-emerald-600" />
               Momento da Oferta
             </h3>
-            {canEdit && (
+            {(isEditing || canEdit) && (
               <button
                 onClick={() => setShowAddSongModal('offering')}
                 className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:bg-emerald-50 px-4 py-2 rounded-xl transition-all"
@@ -549,9 +831,9 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             )}
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'offering')}>
+          <DroppableZone id="offering">
             <SortableContext items={editedEvent.offeringSongs || []} strategy={verticalListSortingStrategy}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[50px]">
                 {(editedEvent.offeringSongs || []).map((songId, index) => (
                   <SortableSongItem
                     key={songId}
@@ -564,6 +846,11 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     onExpand={setExpandedSongId}
                     type="offering"
                     index={index}
+                    isStudying={checkIsStudying(songId)}
+                    onToggleStudy={handleToggleStudy}
+                    vocalists={editedEvent.team.vocal}
+                    assignedVocal={editedEvent.songVocals?.[songId]}
+                    onAssignVocal={(vocal) => handleAssignVocal(songId, vocal)}
                   />
                 ))}
                 {(!editedEvent.offeringSongs || editedEvent.offeringSongs.length === 0) && !isEditing && (
@@ -573,7 +860,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 )}
               </div>
             </SortableContext>
-          </DndContext>
+          </DroppableZone>
         </section>
 
         <section className="space-y-6">
@@ -582,7 +869,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <Music size={24} className="text-purple-600" />
               Louvores para o Final
             </h3>
-            {canEdit && (
+            {(isEditing || canEdit) && (
               <button
                 onClick={() => setShowAddSongModal('outro')}
                 className="flex items-center gap-2 text-purple-600 font-bold text-sm hover:bg-purple-50 px-4 py-2 rounded-xl transition-all"
@@ -593,9 +880,9 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             )}
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'outro')}>
+          <DroppableZone id="outro">
             <SortableContext items={editedEvent.outroSongs || []} strategy={verticalListSortingStrategy}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[50px]">
                 {(editedEvent.outroSongs || []).map((songId, index) => (
                   <SortableSongItem
                     key={songId}
@@ -608,6 +895,11 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     onExpand={setExpandedSongId}
                     type="outro"
                     index={index}
+                    isStudying={checkIsStudying(songId)}
+                    onToggleStudy={handleToggleStudy}
+                    vocalists={editedEvent.team.vocal}
+                    assignedVocal={editedEvent.songVocals?.[songId]}
+                    onAssignVocal={(vocal) => handleAssignVocal(songId, vocal)}
                   />
                 ))}
                 {(!editedEvent.outroSongs || editedEvent.outroSongs.length === 0) && !isEditing && (
@@ -617,24 +909,26 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 )}
               </div>
             </SortableContext>
-          </DndContext>
+          </DroppableZone>
         </section>
+        </DndContext>
 
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold text-[#00153d] flex items-center gap-2">
-              <Users size={24} className="text-blue-600" />
-              Escala da Equipe
-            </h3>
-            {canEdit && (
-              <button
+        <section className="space-y-10 pt-4 border-t border-black/5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-[#00153d] flex items-center gap-2">
+                <Users size={24} className="text-blue-600" />
+                Escala e Confirmacoes
+              </h3>
+              <AttendanceAvatarStack confirmedMembers={confirmedMembers} />
+            </div>
+            <button
                 onClick={() => setShowAttendanceModal(true)}
-                className="text-xs font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition-all flex items-center gap-2"
+                className="flex items-center justify-center gap-2 text-blue-600 font-bold text-sm bg-blue-50/50 hover:bg-blue-50 px-6 py-3 rounded-2xl transition-all border border-blue-100/50"
               >
-                <CheckCircle2 size={16} />
-                Gerenciar Lista
+                <CheckCircle2 size={18} />
+                Controle de Presenca
               </button>
-            )}
           </div>
 
           <div className="bg-slate-50 rounded-[2.5rem] p-8 space-y-10">
@@ -651,13 +945,15 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 )}
               </div>
               <div className="flex flex-wrap gap-3">
-                {editedEvent.team.vocal.map((name) => (
+                {editedEvent.team.vocal
+                  .filter((name) => isEditing || isConfirmed(name))
+                  .map((name) => (
                   <div key={name} className="flex items-center gap-3 pl-2 pr-4 py-2 bg-white rounded-2xl apple-shadow group">
                     <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-[10px] uppercase">
                       {name.charAt(0)}
                     </div>
                     <span className="text-sm font-bold text-[#00153d]">{name}</span>
-                    {editedEvent.attendance?.[name] && <CheckCircle2 size={14} className="text-emerald-500" />}
+                    {isConfirmed(name) && <CheckCircle2 size={14} className="text-emerald-500" />}
                     {isEditing && (
                       <button
                         onClick={() => removeTeamMember(name, 'vocal')}
@@ -668,6 +964,9 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     )}
                   </div>
                 ))}
+                {!isEditing && editedEvent.team.vocal.filter(name => isConfirmed(name)).length === 0 && (
+                  <p className="text-sm text-slate-400 italic py-2">Nenhum vocal confirmado ainda.</p>
+                )}
               </div>
             </div>
 
@@ -684,13 +983,15 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(editedEvent.team.instruments).map(([instrument, name]) => (
+                {Object.entries(editedEvent.team.instruments)
+                  .filter(([instrument, name]) => isEditing || isConfirmed(name as string))
+                  .map(([instrument, name]) => (
                   <div key={instrument} className="flex items-center justify-between p-4 bg-white rounded-2xl apple-shadow group">
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{instrument}</p>
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-bold text-[#00153d]">{name as string}</p>
-                        {editedEvent.attendance?.[name as string] && <CheckCircle2 size={14} className="text-emerald-500" />}
+                        {isConfirmed(name as string) && <CheckCircle2 size={14} className="text-emerald-500" />}
                       </div>
                     </div>
                     {isEditing && (
@@ -703,6 +1004,11 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     )}
                   </div>
                 ))}
+                {!isEditing && Object.entries(editedEvent.team.instruments).filter(([_, name]) => isConfirmed(name as string)).length === 0 && (
+                  <div className="col-span-full">
+                    <p className="text-sm text-slate-400 italic py-2">Nenhum instrumentista confirmado ainda.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -759,7 +1065,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
         {expandedSongId && (() => {
           const song = songs.find(s => s.id === expandedSongId);
           if (!song) return null;
-          const leadVocal = editedEvent.team.vocal[0] || 'A definir';
+          const leadVocal = editedEvent.songVocals?.[expandedSongId] || song.defaultLeadVocal || editedEvent.team.vocal[0] || 'A definir';
 
           return (
             <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
@@ -783,7 +1089,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     <p className="text-slate-500 font-medium">{song.artist}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="p-6 bg-blue-50 rounded-[2rem] space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Tom Principal</p>
                       <p className="text-3xl font-headline font-black text-blue-700">{song.key}</p>
@@ -795,6 +1101,12 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                         <p className="text-lg font-bold text-[#00153d] truncate">{leadVocal}</p>
                       </div>
                     </div>
+                    {song.technicalLevel && (
+                      <div className="p-6 bg-amber-50 rounded-[2rem] space-y-1 col-span-2 md:col-span-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Nível Técnico</p>
+                        <p className="text-3xl font-headline font-black text-amber-600">{song.technicalLevel}<span className="text-xs text-amber-400/60 font-bold ml-1">/10</span></p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3">
@@ -859,9 +1171,9 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 </button>
               </div>
               <div className="p-8 space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Tom</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Tom do Culto</label>
                     <div className="flex items-center gap-2">
                        <div className="flex-1 flex items-center justify-between px-2 py-1.5 bg-slate-50 border border-black/5 rounded-2xl h-[46px]">
                          <button
@@ -891,22 +1203,6 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                        >
                          Menor (m)
                        </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
-                      Proficiencia
-                    </label>
-                    <div className="flex items-center gap-1.5 h-[46px]">
-                      {[1, 2, 3, 4, 5].map((level) => (
-                        <button
-                          key={level}
-                          onClick={() => setEditingSongMetadata({ ...editingSongMetadata, proficiency: level })}
-                          className={`flex-1 h-2 rounded-full transition-all ${
-                            level <= editingSongMetadata.proficiency ? 'bg-blue-600' : 'bg-slate-200'
-                          }`}
-                        />
-                      ))}
                     </div>
                   </div>
                 </div>
@@ -976,28 +1272,60 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden apple-shadow flex flex-col max-h-[80vh]"
+              className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden apple-shadow flex flex-col max-h-[85vh]"
             >
-              <div className="p-8 border-b border-black/5 flex justify-between items-center">
-                <h3 className="text-2xl font-bold text-[#00153d]">Selecionar Musica</h3>
-                <button onClick={() => setShowAddSongModal(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                  <X size={24} />
-                </button>
+              <div className="p-8 border-b border-black/5">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-2xl font-bold text-[#00153d]">Selecionar Música</h3>
+                  <button 
+                    onClick={() => {
+                      setShowAddSongModal(null);
+                      setSongSearchQuery('');
+                    }} 
+                    className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+                
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    <Search size={18} />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Pesquisar por título ou artista..."
+                    value={songSearchQuery}
+                    onChange={(e) => setSongSearchQuery(e.target.value)}
+                    autoFocus
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-black/5 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
               </div>
-              <div className="p-4 overflow-y-auto space-y-2">
-                {songs.map((song) => (
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {filteredSongs.map((song) => (
                   <button
                     key={song.id}
                     onClick={() => addSong(song.id, showAddSongModal)}
-                    className="w-full flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-all text-left group"
+                    className="w-full flex items-center justify-between p-4 hover:bg-blue-50/50 rounded-2xl transition-all text-left group border border-transparent hover:border-blue-100"
                   >
                     <div>
                       <p className="font-bold text-[#00153d] group-hover:text-blue-600 transition-colors">{song.title}</p>
                       <p className="text-xs text-slate-500">{song.artist}</p>
                     </div>
-                    <div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{song.key}</div>
+                    <div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                      {song.key}
+                    </div>
                   </button>
                 ))}
+                
+                {filteredSongs.length === 0 && (
+                  <div className="py-12 text-center text-slate-400">
+                    <Music size={40} className="mx-auto mb-4 opacity-20" />
+                    <p className="text-sm font-medium">Nenhuma música encontrada</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
@@ -1210,18 +1538,20 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               <div className="p-8 bg-slate-50 border-t border-black/5">
                 <button
                   onClick={async () => {
-                    toggleAttendance(userProfile.name);
-                    // We need to wait for state update or use functional update
-                    // Since handleSaveAttendance uses editedEvent, we should call it after state settles
-                    // But here it's easier to just call a modified save function
+                    if (isSaving) return;
+                    
                     try {
                       setIsSaving(true);
                       const updatedAttendance = { ...(editedEvent.attendance || {}) };
                       updatedAttendance[userProfile.name] = true;
+                      
                       await onUpdate({ ...editedEvent, attendance: updatedAttendance });
+                      
+                      toast.success('Presença confirmada com sucesso!');
                       setShowMyAttendanceReview(false);
-                    } catch (error) {
+                    } catch (error: any) {
                       console.error(error);
+                      toast.error('Erro ao confirmar presença: ' + (error.message || 'Verifique sua conexão.'));
                     } finally {
                       setIsSaving(false);
                     }

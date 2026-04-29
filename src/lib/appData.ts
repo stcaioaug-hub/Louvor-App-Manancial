@@ -1,5 +1,5 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { Song, TeamMember, WorshipEvent, RehearsalReport } from '../types';
+import { Song, TeamMember, WorshipEvent, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from '../types';
 import { isConfigured, supabase, supabaseConfigMessage } from './supabase';
 import { INITIAL_EVENTS, INITIAL_SONGS, INITIAL_TEAM } from './seedData';
 
@@ -33,6 +33,10 @@ interface SongRow {
   is_active_repertoire: boolean | null;
   classification_notes: string | null;
   classified_at: string | null;
+  cover_url: string | null;
+  default_lead_vocal: string | null;
+  original_key: string | null;
+  vocal_url: string | null;
 }
 
 interface TeamMemberRow {
@@ -74,6 +78,43 @@ interface EventSongRow {
   is_outro: boolean | null;
   is_offering: boolean | null;
   position: number;
+  lead_vocal: string | null;
+}
+
+interface SongSuggestionRow {
+  id: string;
+  title: string;
+  artist: string;
+  youtube_url: string | null;
+  notes: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  suggested_by: string | null;
+  created_at: string | null;
+}
+
+interface AppNotificationRow {
+  id: string;
+  target_role: string | null;
+  target_user: string | null;
+  title: string;
+  message: string;
+  type: string;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+interface UserNotificationReadRow {
+  user_id: string;
+  notification_id: string;
+  read_at: string;
+}
+
+interface UserSongStudyRow {
+  id: string;
+  user_id: string;
+  song_id: string;
+  is_completed: boolean;
+  created_at: string;
 }
 
 interface AppData {
@@ -81,14 +122,41 @@ interface AppData {
   team: TeamMember[];
   events: WorshipEvent[];
   rehearsalReports: RehearsalReport[];
+  songSuggestions: SongSuggestion[];
+  notifications: AppNotification[];
+  userSongStudy: UserSongStudy[];
 }
 
 export type AppDataSubscription = RealtimeChannel | null;
 
-function assertNoError(error: { message: string } | null) {
+const REQUEST_TIMEOUT = 15000; // 15 seconds
+
+const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = REQUEST_TIMEOUT): Promise<T> => {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Tempo de resposta excedido. Verifique sua conexão.')), timeoutMs)
+    )
+  ]);
+};
+
+function assertNoError(error: { message: string, code?: string } | null) {
   if (error) {
+    console.error('Supabase Error:', error);
+    if (error.code === 'PGRST116') {
+      throw new Error('Você não tem permissão para realizar esta alteração ou o registro não foi encontrado.');
+    }
     throw new Error(error.message);
   }
+}
+
+function isMissingColumnError(error: { message?: string } | null, columnName: string) {
+  const message = error?.message?.toLowerCase() ?? '';
+  return message.includes(columnName.toLowerCase()) && (
+    message.includes('column') ||
+    message.includes('schema cache') ||
+    message.includes('could not find')
+  );
 }
 
 function cloneSong(song: Song): Song {
@@ -114,6 +182,7 @@ function cloneEvent(event: WorshipEvent): WorshipEvent {
       instruments: { ...event.team.instruments },
     },
     attendance: event.attendance ? { ...event.attendance } : undefined,
+    songVocals: event.songVocals ? { ...event.songVocals } : undefined,
   };
 }
 
@@ -123,6 +192,9 @@ function cloneAppData(data: AppData): AppData {
     team: data.team.map(cloneTeamMember),
     events: data.events.map(cloneEvent),
     rehearsalReports: [...(data.rehearsalReports || [])],
+    songSuggestions: [...(data.songSuggestions || [])],
+    notifications: [...(data.notifications || [])],
+    userSongStudy: [...(data.userSongStudy || [])],
   };
 }
 
@@ -209,6 +281,10 @@ function mapSongRow(row: SongRow): Song {
     isActiveRepertoire: row.is_active_repertoire ?? true,
     classificationNotes: row.classification_notes ?? undefined,
     classifiedAt: row.classified_at ?? undefined,
+    cover_url: row.cover_url ?? undefined,
+    defaultLeadVocal: row.default_lead_vocal ?? undefined,
+    originalKey: row.original_key ?? undefined,
+    vocalUrl: row.vocal_url ?? undefined,
   };
 }
 
@@ -252,6 +328,10 @@ function mapSongToRow(song: Song | SongDraft) {
     is_active_repertoire: song.isActiveRepertoire ?? true,
     classification_notes: song.classificationNotes ?? null,
     classified_at: song.classifiedAt ?? null,
+    cover_url: song.cover_url?.trim() || null,
+    default_lead_vocal: song.defaultLeadVocal?.trim() || null,
+    original_key: song.originalKey?.trim() || null,
+    vocal_url: song.vocalUrl?.trim() || null,
   };
 }
 
@@ -301,9 +381,14 @@ function buildEventSongsPayload(event: WorshipEvent) {
     is_outro: true,
     is_offering: false,
     position: index,
+    lead_vocal: event.songVocals?.[songId] || null,
   }));
 
-  return [...mainSongs, ...offeringSongs, ...outroSongs];
+  return [
+    ...mainSongs.map(s => ({ ...s, lead_vocal: event.songVocals?.[s.song_id] || null })),
+    ...offeringSongs.map(s => ({ ...s, lead_vocal: event.songVocals?.[s.song_id] || null })),
+    ...outroSongs
+  ];
 }
 
 function createInitialLocalData(): AppData {
@@ -312,6 +397,9 @@ function createInitialLocalData(): AppData {
     team: sortTeam(INITIAL_TEAM.map(cloneTeamMember)),
     events: sortEvents(INITIAL_EVENTS.map(cloneEvent)),
     rehearsalReports: [],
+    songSuggestions: [],
+    notifications: [],
+    userSongStudy: [],
   };
 }
 
@@ -334,25 +422,33 @@ export async function fetchAppData(): Promise<AppData> {
     return cloneAppData(localData);
   }
 
-  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult] = await Promise.all([
+  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult, suggestionsResult, notificationsResult, readResult, studyResult] = await Promise.all([
     supabase.from('songs').select('*').order('title', { ascending: true }),
     supabase.from('team_members').select('*').order('name', { ascending: true }),
     supabase.from('worship_events').select('*').order('date', { ascending: true }).order('time', { ascending: true }),
-    supabase.from('event_songs').select('event_id, song_id, is_outro, is_offering, position').order('position', { ascending: true }),
+    supabase.from('event_songs').select('event_id, song_id, is_outro, is_offering, position, lead_vocal').order('position', { ascending: true }),
     supabase.from('rehearsal_reports').select('*').order('date', { ascending: false }),
+    supabase.from('song_suggestions').select('*, profiles:suggested_by(name)').order('created_at', { ascending: false }),
+    supabase.from('app_notifications').select('*').order('created_at', { ascending: false }),
+    supabase.from('user_notifications_read').select('*'),
+    supabase.from('user_song_study').select('*'),
   ]);
 
   assertNoError(songsResult.error);
   assertNoError(teamResult.error);
   assertNoError(eventsResult.error);
   assertNoError(eventSongsResult.error);
+  assertNoError(suggestionsResult.error);
+  assertNoError(notificationsResult.error);
+  assertNoError(readResult.error);
+  assertNoError(studyResult.error);
 
   const songs = sortSongs((songsResult.data ?? []).map((row) => mapSongRow(row as SongRow)));
   const team = sortTeam((teamResult.data ?? []).map((row) => mapTeamMemberRow(row as TeamMemberRow)));
-  const eventSongsByEvent = new Map<string, { main: string[]; offering: string[]; outro: string[] }>();
+  const eventSongsByEvent = new Map<string, { main: string[]; offering: string[]; outro: string[]; vocals: Record<string, string> }>();
 
   for (const row of (eventSongsResult.data ?? []) as EventSongRow[]) {
-    const bucket = eventSongsByEvent.get(row.event_id) ?? { main: [], offering: [], outro: [] };
+    const bucket = eventSongsByEvent.get(row.event_id) ?? { main: [], offering: [], outro: [], vocals: {} };
 
     if (row.is_outro) {
       bucket.outro.push(row.song_id);
@@ -362,12 +458,16 @@ export async function fetchAppData(): Promise<AppData> {
       bucket.main.push(row.song_id);
     }
 
+    if (row.lead_vocal) {
+      bucket.vocals[row.song_id] = row.lead_vocal;
+    }
+
     eventSongsByEvent.set(row.event_id, bucket);
   }
 
   const events = sortEvents(
     ((eventsResult.data ?? []) as WorshipEventRow[]).map((row) => {
-      const linkedSongs = eventSongsByEvent.get(row.id) ?? { main: [], offering: [], outro: [] };
+      const linkedSongs = eventSongsByEvent.get(row.id) ?? { main: [], offering: [], outro: [], vocals: {} };
 
       return {
         id: row.id,
@@ -382,6 +482,7 @@ export async function fetchAppData(): Promise<AppData> {
         outroSongs: linkedSongs.outro,
         team: normalizeTeam(row.team),
         attendance: normalizeAttendance(row.attendance),
+        songVocals: linkedSongs.vocals,
       };
     })
   );
@@ -398,7 +499,50 @@ export async function fetchAppData(): Promise<AppData> {
     created_at: row.created_at ?? undefined,
   }));
 
-  return { songs, team, events, rehearsalReports };
+  const songSuggestions = (suggestionsResult.data ?? []).map((row: any) => ({
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    youtube_url: row.youtube_url ?? undefined,
+    notes: row.notes ?? undefined,
+    status: row.status,
+    suggested_by: row.suggested_by ?? undefined,
+    suggested_by_name: row.profiles?.name ?? undefined,
+    created_at: row.created_at ?? undefined,
+  }));
+
+  // Map user read status
+  const readMap = new Set<string>();
+  for (const read of (readResult.data ?? []) as UserNotificationReadRow[]) {
+    readMap.add(`${read.user_id}-${read.notification_id}`);
+  }
+
+  // To properly calculate isRead, we wait to apply it at component level based on current user.
+  // But we can store all read records in app_notifications indirectly or just at component.
+  // We'll let the component pass its user.id to evaluate.
+  // Here we just fetch notifications.
+  const notifications = (notificationsResult.data ?? []).map((row: AppNotificationRow) => ({
+    id: row.id,
+    target_role: row.target_role ?? undefined,
+    target_user: row.target_user ?? undefined,
+    title: row.title,
+    message: row.message,
+    type: row.type,
+    created_by: row.created_by ?? undefined,
+    created_at: row.created_at ?? undefined,
+    // Add raw reads so component can check
+    _reads: (readResult.data ?? []).filter((r: any) => r.notification_id === row.id).map((r: any) => r.user_id),
+  })) as (AppNotification & { _reads: string[] })[];
+
+  const userSongStudy = (studyResult.data ?? []).map((row: UserSongStudyRow) => ({
+    id: row.id,
+    user_id: row.user_id,
+    song_id: row.song_id,
+    is_completed: row.is_completed,
+    created_at: row.created_at,
+  }));
+
+  return { songs, team, events, rehearsalReports, songSuggestions, notifications, userSongStudy };
 }
 
 export async function createSong(song: SongDraft): Promise<Song> {
@@ -415,6 +559,7 @@ export async function createSong(song: SongDraft): Promise<Song> {
       tags: [...song.tags],
       lastPlayed: song.lastPlayed,
       links: { ...song.links },
+      cover_url: song.cover_url,
     };
 
     localData = {
@@ -425,7 +570,14 @@ export async function createSong(song: SongDraft): Promise<Song> {
     return cloneSong(createdSong);
   }
 
-  const result = await supabase.from('songs').insert(mapSongToRow(song)).select('*').single();
+  const songRow = mapSongToRow(song);
+  let result = await supabase.from('songs').insert(songRow).select('*').single();
+
+  if (result.error && isMissingColumnError(result.error, 'cover_url')) {
+    const { cover_url: _coverUrl, ...songRowWithoutCover } = songRow;
+    result = await supabase.from('songs').insert(songRowWithoutCover).select('*').single();
+  }
+
   assertNoError(result.error);
   return mapSongRow(result.data as SongRow);
 }
@@ -442,9 +594,16 @@ export async function updateSong(song: Song): Promise<Song> {
     return updatedSong;
   }
 
-  const result = await supabase.from('songs').update(mapSongToRow(song)).eq('id', song.id).select('*').single();
+  const songRow = mapSongToRow(song);
+  let result = await supabase.from('songs').update(songRow).eq('id', song.id);
+
+  if (result.error && isMissingColumnError(result.error, 'cover_url')) {
+    const { cover_url: _coverUrl, ...songRowWithoutCover } = songRow;
+    result = await supabase.from('songs').update(songRowWithoutCover).eq('id', song.id);
+  }
+
   assertNoError(result.error);
-  return mapSongRow(result.data as SongRow);
+  return cloneSong(song);
 }
 
 export async function deleteSong(id: string): Promise<void> {
@@ -600,6 +759,7 @@ export async function deleteEvent(id: string): Promise<void> {
 export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
   if (!isConfigured) {
     const updatedEvent = cloneEvent(event);
+    console.log('Local Mode: Updating event', event.id);
 
     localData = {
       ...localData,
@@ -609,21 +769,55 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
     return updatedEvent;
   }
 
-  const eventResult = await supabase
-    .from('worship_events')
-    .update(mapEventToRow(event))
-    .eq('id', event.id)
-    .select('*')
-    .single();
+  console.log('Supabase: Updating event metadata', event.id);
+
+  // Update main event data
+  const eventResult = await withTimeout(
+    supabase
+      .from('worship_events')
+      .update(mapEventToRow(event))
+      .eq('id', event.id)
+      .select('*')
+  );
+  
   assertNoError(eventResult.error);
 
-  const deleteResult = await supabase.from('event_songs').delete().eq('event_id', event.id);
-  assertNoError(deleteResult.error);
+  if (!eventResult.data || eventResult.data.length === 0) {
+    throw new Error('Você não tem permissão para editar este evento ou ele foi excluído.');
+  }
 
-  const payload = buildEventSongsPayload(event);
-  if (payload.length > 0) {
-    const insertResult = await supabase.from('event_songs').insert(payload);
-    assertNoError(insertResult.error);
+  const updatedRow = eventResult.data[0];
+
+  // Optimization: Only update event_songs if they might have changed
+  // This is important because musicians can update attendance but might not have full permissions for event_songs management
+  // We'll fetch existing songs to compare
+  const { data: existingSongs, error: fetchError } = await supabase
+    .from('event_songs')
+    .select('song_id, is_outro, is_offering, position')
+    .eq('event_id', event.id);
+
+  if (!fetchError && existingSongs) {
+    const payload = buildEventSongsPayload(event);
+    
+    // Compare existing with new payload
+    const hasChanged = payload.length !== existingSongs.length || 
+      payload.some((p, i) => 
+        p.song_id !== existingSongs[i].song_id || 
+        p.is_outro !== existingSongs[i].is_outro || 
+        p.is_offering !== existingSongs[i].is_offering ||
+        p.position !== existingSongs[i].position
+      );
+
+    if (hasChanged) {
+      console.log('Supabase: Updating event songs (setlist changed)', event.id);
+      const deleteResult = await supabase.from('event_songs').delete().eq('event_id', event.id);
+      assertNoError(deleteResult.error);
+
+      if (payload.length > 0) {
+        const insertResult = await supabase.from('event_songs').insert(payload);
+        assertNoError(insertResult.error);
+      }
+    }
   }
 
   return {
@@ -686,6 +880,146 @@ export async function createRehearsalReport(report: Omit<RehearsalReport, 'id'>)
   };
 }
 
+export async function createSongSuggestion(suggestion: Omit<SongSuggestion, 'id' | 'created_at' | 'status'>): Promise<SongSuggestion> {
+  if (!isConfigured) {
+    const created: SongSuggestion = {
+      id: createLocalId('sug'),
+      ...suggestion,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
+    localData = {
+      ...localData,
+      songSuggestions: [created, ...localData.songSuggestions],
+    };
+    return created;
+  }
+
+  const result = await supabase.from('song_suggestions').insert(suggestion).select('*').single();
+  assertNoError(result.error);
+  const row = result.data as SongSuggestionRow;
+  return {
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    youtube_url: row.youtube_url ?? undefined,
+    notes: row.notes ?? undefined,
+    status: row.status,
+    suggested_by: row.suggested_by ?? undefined,
+    created_at: row.created_at ?? undefined,
+  };
+}
+
+export async function updateSongSuggestion(id: string, updates: Partial<SongSuggestion>): Promise<void> {
+  if (!isConfigured) {
+    localData = {
+      ...localData,
+      songSuggestions: localData.songSuggestions.map(s => s.id === id ? { ...s, ...updates } : s)
+    };
+    return;
+  }
+
+  const result = await supabase.from('song_suggestions').update(updates).eq('id', id);
+  assertNoError(result.error);
+}
+
+export async function deleteSongSuggestion(id: string): Promise<void> {
+  if (!isConfigured) {
+    localData = {
+      ...localData,
+      songSuggestions: localData.songSuggestions.filter(s => s.id !== id)
+    };
+    return;
+  }
+
+  const result = await supabase.from('song_suggestions').delete().eq('id', id);
+  assertNoError(result.error);
+}
+
+export async function createAppNotification(notification: Omit<AppNotification, 'id' | 'created_at' | 'isRead'>): Promise<AppNotification> {
+  if (!isConfigured) {
+    const created: AppNotification = {
+      id: createLocalId('notif'),
+      ...notification,
+      created_at: new Date().toISOString(),
+    };
+    localData = {
+      ...localData,
+      notifications: [created, ...localData.notifications],
+    };
+    return created;
+  }
+
+  const result = await supabase.from('app_notifications').insert(notification).select('*').single();
+  assertNoError(result.error);
+  const row = result.data as AppNotificationRow;
+  return {
+    id: row.id,
+    target_role: row.target_role ?? undefined,
+    target_user: row.target_user ?? undefined,
+    title: row.title,
+    message: row.message,
+    type: row.type,
+    created_by: row.created_by ?? undefined,
+    created_at: row.created_at ?? undefined,
+  };
+}
+
+export async function markNotificationAsRead(userId: string, notificationId: string): Promise<void> {
+  if (!isConfigured) {
+    return;
+  }
+  const result = await supabase.from('user_notifications_read').upsert({ user_id: userId, notification_id: notificationId });
+  assertNoError(result.error);
+}
+
+export async function toggleStudySong(userId: string, songId: string): Promise<void> {
+  if (!isConfigured) {
+    const existing = localData.userSongStudy.find(s => s.user_id === userId && s.song_id === songId);
+    if (existing) {
+      localData = {
+        ...localData,
+        userSongStudy: localData.userSongStudy.filter(s => s.id !== existing.id)
+      };
+    } else {
+      localData = {
+        ...localData,
+        userSongStudy: [...localData.userSongStudy, {
+          id: createLocalId('study'),
+          user_id: userId,
+          song_id: songId,
+          is_completed: false,
+          created_at: new Date().toISOString()
+        }]
+      };
+    }
+    return;
+  }
+
+  const { data: existing } = await supabase.from('user_song_study').select('id').eq('user_id', userId).eq('song_id', songId).single();
+  
+  if (existing) {
+    const result = await supabase.from('user_song_study').delete().eq('id', existing.id);
+    assertNoError(result.error);
+  } else {
+    const result = await supabase.from('user_song_study').insert({ user_id: userId, song_id: songId });
+    assertNoError(result.error);
+  }
+}
+
+export async function updateStudySongStatus(studyId: string, isCompleted: boolean): Promise<void> {
+  if (!isConfigured) {
+    localData = {
+      ...localData,
+      userSongStudy: localData.userSongStudy.map(s => s.id === studyId ? { ...s, is_completed: isCompleted } : s)
+    };
+    return;
+  }
+
+  const result = await supabase.from('user_song_study').update({ is_completed: isCompleted }).eq('id', studyId);
+  assertNoError(result.error);
+}
+
 export function subscribeToAppData(onChange: () => void): AppDataSubscription {
   if (!isConfigured) {
     void onChange;
@@ -698,6 +1032,9 @@ export function subscribeToAppData(onChange: () => void): AppDataSubscription {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'worship_events' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'event_songs' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'song_suggestions' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_notifications' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'user_song_study' }, onChange)
     .subscribe();
 }
 

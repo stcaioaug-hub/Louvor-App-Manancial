@@ -42,6 +42,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
   const [filter, setFilter] = useState<'all' | 'rehearsal'>('all');
   const [showWizard, setShowWizard] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   // Inline Edit State
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -62,6 +63,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
     endDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
   });
   const [subType, setSubType] = useState<string>('');
+  const [creatingType, setCreatingType] = useState<'skip' | 'confirm' | null>(null);
   
   const [newEvent, setNewEvent] = useState<Partial<WorshipEvent>>({
     type: 'service',
@@ -121,15 +123,22 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
   const todayMonth = () => setCurrentMonth(new Date());
 
   const handleEmptyDayClick = (date: Date) => {
+    setSelectedDate(toDateString(date));
     if (!canEdit) return;
     setNewEvent({ ...newEvent, date: toDateString(date), title: '', songs: [] });
-    setWizardStep(1);
-    setShowWizard(true);
+    // setWizardStep(1);
+    // setShowWizard(true); // Don't auto-open wizard on click, just select the day
   };
 
-  const handleCreateEvent = async () => {
+  const handleDayClick = (date: Date) => {
+    setSelectedDate(toDateString(date));
+  };
+
+  const handleCreateEvent = async (skipSongsOrEvent?: boolean | React.MouseEvent) => {
     if (!onCreateEvent) return;
+    const isSkipping = typeof skipSongsOrEvent === 'boolean' ? skipSongsOrEvent : false;
     try {
+      setCreatingType(isSkipping ? 'skip' : 'confirm');
       setIsCreating(true);
       
       const eventDates: string[] = [newEvent.date || new Date().toISOString().split('T')[0]];
@@ -153,24 +162,28 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
       }
 
       const baseTitle = subType ? `${subType}${newEvent.title ? `: ${newEvent.title}` : ''}` : (newEvent.title || 'Novo Evento');
+      const songsToUse = isSkipping ? [] : (newEvent.songs || []);
 
-      for (const date of eventDates) {
-        await onCreateEvent({
+      const promises = eventDates.map(date => 
+        onCreateEvent({
           ...newEvent,
           title: baseTitle,
           type: newEvent.type || 'service',
           date: date,
           time: newEvent.time || '19:30',
-          songs: newEvent.songs || [],
+          songs: songsToUse,
           team: { vocal: [], instruments: {} }
-        } as Omit<WorshipEvent, 'id'>);
-      }
+        } as Omit<WorshipEvent, 'id'>)
+      );
+
+      await Promise.all(promises);
       
       setWizardStep(5);
     } catch (error) {
       console.error("Erro ao criar evento(s):", error);
     } finally {
       setIsCreating(false);
+      setCreatingType(null);
     }
   };
 
@@ -324,8 +337,9 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
       </div>
 
       {view === 'list' ? (
-        <div className="bg-white rounded-[2.5rem] p-8 apple-shadow overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-[2.5rem] p-4 sm:p-8 apple-shadow overflow-hidden">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-100">
@@ -520,41 +534,96 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                       </td>
                     </motion.tr>
                   ))}
-                  {filteredEvents.length === 0 && (
-                     <tr>
-                        <td colSpan={6} className="py-12 text-center text-slate-400">
-                           Nenhum evento encontrado.
-                        </td>
-                     </tr>
-                  )}
                 </AnimatePresence>
               </tbody>
             </table>
           </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-[2.5rem] p-4 sm:p-8 apple-shadow overflow-hidden">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-2xl font-bold text-[#00153d] capitalize">
-              {currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-            </h3>
-            <div className="flex items-center gap-2">
-              <button onClick={todayMonth} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-[#00153d] hover:bg-slate-100 rounded-xl transition-all">
-                Hoje
-              </button>
-              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl">
-                <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-[#00153d] hover:bg-white rounded-lg transition-all shadow-sm">
-                  <ChevronLeft size={20} />
-                </button>
-                <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-[#00153d] hover:bg-white rounded-lg transition-all shadow-sm">
-                  <ChevronRight size={20} />
-                </button>
-              </div>
-            </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4">
+            <AnimatePresence mode="popLayout">
+              {filteredEvents.map((event, index) => (
+                <motion.div
+                  key={event.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => onSelectEvent(event.id)}
+                  className="p-5 rounded-[1.5rem] bg-slate-50/50 border border-slate-100 space-y-4 active:scale-[0.98] transition-all"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                      event.type === 'service' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                    }`}>
+                      {event.type === 'service' ? 'Culto' : 'Ensaio'}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Clock size={14} />
+                      <span className="text-xs font-bold">{event.time}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-lg font-bold text-[#00153d] leading-tight mb-1">{event.title}</h4>
+                    <div className="flex items-center gap-2 text-slate-500 text-xs font-medium">
+                      <CalendarIcon size={14} className="text-slate-400" />
+                      <span className="capitalize">{formatDate(event.date)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <div className="flex flex-wrap gap-1">
+                      {event.songs.length === 0 ? (
+                        <span className="text-[10px] font-medium text-slate-400 italic">Sem repertório</span>
+                      ) : (
+                        <>
+                          <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded-md truncate max-w-[150px]">
+                            {getSongTitle(event.songs[0])}
+                          </span>
+                          {event.songs.length > 1 && (
+                            <span className="text-[10px] font-black text-blue-700 bg-blue-100 px-2 py-1 rounded-md">
+                              +{event.songs.length - 1}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <ChevronRight size={18} className="text-slate-300" />
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
 
-          <div className="overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="min-w-[700px] grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
+          {filteredEvents.length === 0 && (
+            <div className="py-12 text-center text-slate-400">
+              Nenhum evento encontrado.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-white rounded-[2.5rem] p-4 sm:p-8 apple-shadow overflow-hidden">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-bold text-[#00153d] capitalize">
+                {currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button onClick={todayMonth} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-[#00153d] hover:bg-slate-100 rounded-xl transition-all">
+                  Hoje
+                </button>
+                <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl">
+                  <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-[#00153d] hover:bg-white rounded-lg transition-all shadow-sm">
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-[#00153d] hover:bg-white rounded-lg transition-all shadow-sm">
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
               {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
                 <div key={day} className="bg-white py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
                   {day}
@@ -562,44 +631,129 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
               ))}
               
               {calendarDays.map((dayObj, i) => {
-              const dayString = toDateString(dayObj.date);
-              const dayEvents = filteredEvents.filter(e => e.date === dayString);
-              const isToday = dayString === toDateString(new Date());
+                const dayString = toDateString(dayObj.date);
+                const dayEvents = filteredEvents.filter(e => e.date === dayString);
+                const isToday = dayString === toDateString(new Date());
+                const isSelected = dayString === selectedDate;
 
-              return (
-                <div 
-                  key={i} 
-                  onClick={() => handleEmptyDayClick(dayObj.date)}
-                  className={`bg-white min-h-[120px] p-2 transition-colors ${!dayObj.isCurrentMonth ? 'opacity-40 bg-slate-50/50' : 'hover:bg-slate-50'} ${canEdit ? 'cursor-pointer' : ''}`}
-                >
-                  <div className={`w-8 h-8 flex items-center justify-center font-bold text-sm mb-2 rounded-full ${isToday ? 'bg-blue-600 text-white' : 'text-[#00153d]'}`}>
-                    {dayObj.date.getDate()}
+                return (
+                  <div 
+                    key={i} 
+                    onClick={() => handleDayClick(dayObj.date)}
+                    onDoubleClick={() => handleEmptyDayClick(dayObj.date)}
+                    className={`bg-white min-h-[60px] sm:min-h-[120px] p-1 sm:p-2 transition-all relative ${
+                      !dayObj.isCurrentMonth ? 'opacity-30 bg-slate-50/50' : 'hover:bg-slate-50'
+                    } ${isSelected ? 'ring-2 ring-blue-500 ring-inset z-10' : ''} cursor-pointer`}
+                  >
+                    <div className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center font-bold text-xs sm:text-sm mb-1 sm:mb-2 rounded-full transition-colors ${
+                      isToday ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : (isSelected ? 'bg-blue-100 text-blue-700' : 'text-[#00153d]')
+                    }`}>
+                      {dayObj.date.getDate()}
+                    </div>
+                    
+                    {/* Desktop View: Full Events */}
+                    <div className="hidden sm:block space-y-1.5">
+                      {dayEvents.map(evt => (
+                        <div 
+                          key={evt.id} 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectEvent(evt.id);
+                          }}
+                          className={`text-xs p-1.5 rounded-lg border cursor-pointer hover:-translate-y-0.5 transition-transform ${
+                            evt.type === 'service' 
+                              ? 'bg-blue-50 border-blue-100 text-blue-700' 
+                              : 'bg-purple-50 border-purple-100 text-purple-700'
+                          }`}
+                          title={evt.title}
+                        >
+                          <div className="font-bold truncate">{evt.title}</div>
+                          <div className="text-[9px] font-medium opacity-80 mt-0.5">{evt.time}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Mobile View: Dots */}
+                    <div className="sm:hidden flex justify-center gap-1 mt-auto pb-1">
+                      {dayEvents.slice(0, 3).map(evt => (
+                        <div 
+                          key={evt.id} 
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            evt.type === 'service' ? 'bg-blue-500' : 'bg-purple-500'
+                          }`}
+                        />
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    {dayEvents.map(evt => (
-                      <div 
-                        key={evt.id} 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectEvent(evt.id);
-                        }}
-                        className={`text-xs p-1.5 rounded-lg border cursor-pointer hover:-translate-y-0.5 transition-transform ${
-                          evt.type === 'service' 
-                            ? 'bg-blue-50 border-blue-100 text-blue-700' 
-                            : 'bg-purple-50 border-purple-100 text-purple-700'
-                        }`}
-                        title={evt.title}
-                      >
-                        <div className="font-bold truncate">{evt.title}</div>
-                        <div className="text-[9px] font-medium opacity-80 mt-0.5">{evt.time}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
             </div>
           </div>
+
+          {/* Selected Day Events (Mobile & Desktop) */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            key={selectedDate}
+            className="bg-white rounded-[2.5rem] p-6 sm:p-8 apple-shadow"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                  <CalendarIcon size={20} />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-[#00153d]">Eventos do Dia</h4>
+                  <p className="text-xs font-medium text-slate-400 capitalize">{formatDate(selectedDate)}</p>
+                </div>
+              </div>
+              {canEdit && (
+                <button
+                  onClick={() => handleEmptyDayClick(new Date(selectedDate + 'T12:00:00'))}
+                  className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-all"
+                >
+                  <Plus size={20} />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {filteredEvents.filter(e => e.date === selectedDate).length > 0 ? (
+                filteredEvents.filter(e => e.date === selectedDate).map(evt => (
+                  <div 
+                    key={evt.id}
+                    onClick={() => onSelectEvent(evt.id)}
+                    className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-2 h-10 rounded-full ${evt.type === 'service' ? 'bg-blue-500' : 'bg-purple-500'}`} />
+                      <div>
+                        <h5 className="font-bold text-[#00153d] group-hover:text-blue-600 transition-colors">{evt.title}</h5>
+                        <div className="flex items-center gap-3 mt-1">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                            <Clock size={12} />
+                            <span>{evt.time}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                            <Music size={12} />
+                            <span>{evt.songs.length} músicas</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-100">
+                  <p className="text-sm font-medium text-slate-400">Nenhum evento programado para hoje.</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
         </div>
       )}
 
@@ -907,19 +1061,33 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                           )}
                         </div>
 
-                        <div className="flex gap-4 pt-6">
+                        <div className="flex gap-3 sm:gap-4 pt-6 flex-col sm:flex-row">
+                          <div className="flex gap-3 sm:gap-4 w-full sm:w-auto order-2 sm:order-1">
+                            <button 
+                              onClick={() => setWizardStep(3)}
+                              className="w-16 flex items-center justify-center p-4 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:bg-slate-100 hover:text-[#00153d] transition-all active:scale-95 shrink-0"
+                            >
+                              <ChevronLeft size={20} />
+                            </button>
+                            {recurrence.enabled && (
+                              <button 
+                                onClick={() => {
+                                  setNewEvent(prev => ({ ...prev, songs: [] }));
+                                  handleCreateEvent(true);
+                                }}
+                                disabled={isCreating}
+                                className="flex-1 sm:w-auto px-6 py-4 bg-slate-100 text-slate-600 rounded-[1.5rem] text-xs sm:text-sm font-black uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center whitespace-nowrap"
+                              >
+                                {isCreating && creatingType === 'skip' ? 'Aguarde...' : 'Pular Etapa'}
+                              </button>
+                            )}
+                          </div>
                           <button 
-                            onClick={() => setWizardStep(3)}
-                            className="w-16 flex items-center justify-center p-4 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:bg-slate-100 hover:text-[#00153d] transition-all active:scale-95"
-                          >
-                            <ChevronLeft size={20} />
-                          </button>
-                          <button 
-                            onClick={handleCreateEvent}
+                            onClick={() => handleCreateEvent(false)}
                             disabled={isCreating}
-                            className="flex-1 py-4 bg-emerald-600 text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2"
+                            className="flex-1 order-1 sm:order-2 py-4 bg-emerald-600 text-white rounded-[1.5rem] text-xs sm:text-sm font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2"
                           >
-                            <span>{isCreating ? 'Finalizando...' : 'Confirmar e Criar'}</span>
+                            <span>{isCreating && creatingType === 'confirm' ? 'Finalizando...' : 'Confirmar e Criar'}</span>
                           </button>
                         </div>
                       </div>
@@ -935,7 +1103,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                         </div>
                         <div>
                            <h3 className="text-2xl font-headline font-extrabold text-[#00153d] tracking-tight mb-2">Agendado com Sucesso!</h3>
-                           <p className="text-sm text-slate-500">O novo evento foi cadastrado na agenda e o repertório guardado. Todos os membros serão notificados.</p>
+                           <p className="text-sm text-slate-500">O novo evento foi cadastrado na agenda{(creatingType === 'confirm' && newEvent.songs?.length) ? ' e o repertório guardado' : ''}. Todos os membros serão notificados.</p>
                         </div>
                         <button 
                            onClick={() => { setShowWizard(false); setWizardStep(1); }}

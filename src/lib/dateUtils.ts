@@ -33,6 +33,7 @@ export function formatDashboardDate(dateStr: string) {
   const date = parseLocalDate(dateStr);
   return {
     day: date.getDate(),
+    month: date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''),
     weekday: date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
   };
 }

@@ -44,13 +44,28 @@ CREATE TABLE IF NOT EXISTS public.song_favorites (
 CREATE TABLE IF NOT EXISTS public.song_suggestions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   profile_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  suggested_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   artist TEXT NOT NULL,
   link_url TEXT,
+  youtube_url TEXT,
+  notes TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE public.songs
+ADD COLUMN IF NOT EXISTS cover_url TEXT;
+
+ALTER TABLE public.song_suggestions
+ADD COLUMN IF NOT EXISTS suggested_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+ALTER TABLE public.song_suggestions
+ADD COLUMN IF NOT EXISTS youtube_url TEXT;
+
+ALTER TABLE public.song_suggestions
+ADD COLUMN IF NOT EXISTS notes TEXT;
 
 -- 2. Habilitando RLS
 
@@ -77,9 +92,14 @@ CREATE POLICY "Minister Full Attendance" ON public.event_attendance FOR ALL
   USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('minister', 'pastor')));
 
 -- Sugestões podem ser criadas por quem as solicitou.
+DROP POLICY IF EXISTS "Insert Own Suggestions" ON public.song_suggestions;
 CREATE POLICY "Insert Own Suggestions" ON public.song_suggestions FOR INSERT 
-  WITH CHECK (auth.uid() = profile_id);
+  WITH CHECK (auth.uid() = suggested_by OR suggested_by IS NULL);
 
+DROP POLICY IF EXISTS "Minister Full Suggestions" ON public.song_suggestions;
+CREATE POLICY "Minister Full Suggestions" ON public.song_suggestions FOR ALL 
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('minister', 'pastor')))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('minister', 'pastor')));
 
 -- 4. Função de Sincronia / Backfill
 -- Tenta mapear nomes dos JSONBs antigos para UUIDs das novas tabelas. Recomendado rodar sob demanda.

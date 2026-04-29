@@ -75,11 +75,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
     setStep('personalize');
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async ({ skipCredentials = false }: { skipCredentials?: boolean } = {}) => {
     setIsLoading(true);
     setStep('loading');
 
     try {
+      const newEmail = securityData.email.trim();
+      const newPassword = securityData.password;
+
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .update({
@@ -95,10 +98,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
       if (profileError) throw profileError;
 
       // Update credentials if provided
-      if (securityData.email || securityData.password) {
+      if (!skipCredentials && (newEmail || newPassword)) {
         const updateParams: any = {};
-        if (securityData.email && securityData.email !== '') updateParams.email = securityData.email;
-        if (securityData.password && securityData.password !== '') updateParams.password = securityData.password;
+        if (newEmail) updateParams.email = newEmail;
+        if (newPassword) updateParams.password = newPassword;
 
         const { error: authError } = await supabase.auth.updateUser(updateParams);
         if (authError) throw authError;
@@ -378,7 +381,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
 
                 <div className="pt-4">
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => handleSubmit()}
                     disabled={
                       isLoading || 
                       (securityData.password !== securityData.confirmPassword) || 
@@ -398,6 +401,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ profile, onC
                   <p className="text-center mt-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                     Ao clicar em finalizar, sua conta será atualizada e você será redirecionado.
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => handleSubmit({ skipCredentials: true })}
+                    disabled={isLoading}
+                    className="w-full mt-3 py-3 text-slate-500 hover:text-[#00153d] rounded-2xl font-bold transition-colors disabled:opacity-50"
+                  >
+                    Mudar e-mail e senha depois
+                  </button>
                 </div>
               </div>
             </div>
