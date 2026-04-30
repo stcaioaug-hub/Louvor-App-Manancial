@@ -117,6 +117,84 @@ function PullToRefreshIndicator({
   );
 }
 
+interface EventDetailRouteProps {
+  events: WorshipEvent[];
+  songs: Song[];
+  team: TeamMember[];
+  navigate: ReturnType<typeof useNavigate>;
+  onUpdateEvent: (event: WorshipEvent) => Promise<void>;
+  onUpdateSong: (song: Song) => Promise<void>;
+  isMinister: boolean;
+  effectiveProfile: Profile | null;
+  isSidebarHidden: boolean;
+  userSongStudy: UserSongStudy[];
+  onToggleStudySong: (songId: string) => Promise<void>;
+  onRefreshBlockChange: (blocked: boolean) => void;
+}
+
+function EventDetailRoute({
+  events,
+  songs,
+  team,
+  navigate,
+  onUpdateEvent,
+  onUpdateSong,
+  isMinister,
+  effectiveProfile,
+  isSidebarHidden,
+  userSongStudy,
+  onToggleStudySong,
+  onRefreshBlockChange,
+}: EventDetailRouteProps) {
+  const { eventId } = useParams();
+  const event = useMemo(() => events.find(e => e.id === eventId) ?? null, [events, eventId]);
+  if (!event) return <Navigate to="/app/events" replace />;
+
+  return (
+    <EventDetail
+      event={event}
+      events={events}
+      songs={songs}
+      team={team}
+      onBack={() => navigate('/app/schedule')}
+      onUpdate={onUpdateEvent}
+      onUpdateSong={onUpdateSong}
+      onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
+      onSelectEvent={(id) => navigate(`/app/events/${id}`)}
+      canEdit={isMinister}
+      userProfile={effectiveProfile}
+      isSidebarHidden={isSidebarHidden}
+      userSongStudy={userSongStudy}
+      onToggleStudySong={onToggleStudySong}
+      onRefreshBlockChange={onRefreshBlockChange}
+    />
+  );
+}
+
+interface SongDetailRouteProps {
+  songs: Song[];
+  events: WorshipEvent[];
+  navigate: ReturnType<typeof useNavigate>;
+  onUpdateSong: (song: Song) => Promise<void>;
+  isMinister: boolean;
+}
+
+function SongDetailRoute({ songs, events, navigate, onUpdateSong, isMinister }: SongDetailRouteProps) {
+  const { songId } = useParams();
+  const song = useMemo(() => songs.find(s => s.id === songId) ?? null, [songs, songId]);
+  if (!song) return <Navigate to="/app/repertoire" replace />;
+
+  return (
+    <SongDetail
+      song={song}
+      events={events}
+      onBack={() => navigate(-1)}
+      onUpdateSong={onUpdateSong}
+      canEdit={isMinister}
+    />
+  );
+}
+
 export default function App() {
   const appMode = getAppMode();
   const appModeMessage = getAppModeMessage();
@@ -518,7 +596,11 @@ export default function App() {
       setErrorMessage(null);
       await deleteEvent(id);
       setEvents((previous) => previous.filter((event) => event.id !== id));
-      navigate('/app/events');
+      
+      // Only navigate away if we are currently viewing the event that was deleted
+      if (window.location.pathname.includes(`/app/events/${id}`)) {
+        navigate('/app/schedule');
+      }
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
       throw error;
@@ -527,48 +609,6 @@ export default function App() {
 
   const effectiveProfile = profile ?? (isLocalMode ? localProfile : null);
   const isMinister = isLocalMode || effectiveProfile?.role === 'minister' || effectiveProfile?.role === 'pastor';
-
-  const EventDetailRoute = () => {
-    const { eventId } = useParams();
-    const event = useMemo(() => events.find(e => e.id === eventId) ?? null, [events, eventId]);
-    if (!event) return <Navigate to="/app/events" replace />;
-    
-    return (
-      <EventDetail
-        event={event}
-        events={events}
-        songs={songs}
-        team={team}
-        onBack={() => navigate('/app/schedule')}
-        onUpdate={handleUpdateEvent}
-        onUpdateSong={handleUpdateSong}
-        onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
-        onSelectEvent={(id) => navigate(`/app/events/${id}`)}
-        canEdit={isMinister}
-        userProfile={effectiveProfile}
-        isSidebarHidden={isSidebarHidden}
-        userSongStudy={userSongStudy}
-        onToggleStudySong={handleToggleStudySong}
-        onRefreshBlockChange={setIsPullRefreshBlocked}
-      />
-    );
-  };
-
-  const SongDetailRoute = () => {
-    const { songId } = useParams();
-    const song = useMemo(() => songs.find(s => s.id === songId) ?? null, [songs, songId]);
-    if (!song) return <Navigate to="/app/repertoire" replace />;
-    
-    return (
-      <SongDetail
-        song={song}
-        events={events}
-        onBack={() => navigate(-1)}
-        onUpdateSong={handleUpdateSong}
-        canEdit={isMinister}
-      />
-    );
-  };
 
   const renderContent = () => {
     return (
@@ -612,7 +652,15 @@ export default function App() {
           />
         } />
         
-        <Route path="/app/repertoire/:songId" element={<SongDetailRoute />} />
+        <Route path="/app/repertoire/:songId" element={
+          <SongDetailRoute
+            songs={songs}
+            events={events}
+            navigate={navigate}
+            onUpdateSong={handleUpdateSong}
+            isMinister={isMinister}
+          />
+        } />
         
         <Route path="/app/schedule" element={
           <Schedule 
@@ -621,12 +669,28 @@ export default function App() {
             onSelectEvent={(id) => navigate(`/app/events/${id}`)}
             onCreateEvent={handleCreateEvent}
             onUpdateEvent={handleUpdateEvent}
+            onDeleteEvent={handleDeleteEvent}
             canEdit={isMinister}
             onBack={() => navigate('/app/dashboard')}
           />
         } />
         
-        <Route path="/app/events/:eventId" element={<EventDetailRoute />} />
+        <Route path="/app/events/:eventId" element={
+          <EventDetailRoute
+            events={events}
+            songs={songs}
+            team={team}
+            navigate={navigate}
+            onUpdateEvent={handleUpdateEvent}
+            onUpdateSong={handleUpdateSong}
+            isMinister={isMinister}
+            effectiveProfile={effectiveProfile}
+            isSidebarHidden={isSidebarHidden}
+            userSongStudy={userSongStudy}
+            onToggleStudySong={handleToggleStudySong}
+            onRefreshBlockChange={setIsPullRefreshBlocked}
+          />
+        } />
         
         <Route path="/app/team" element={
           <TeamList

@@ -623,10 +623,10 @@ export async function deleteSong(id: string): Promise<void> {
   }
 
   // Remove references in event_songs first because of ON DELETE RESTRICT
-  const junctionResult = await supabase.from('event_songs').delete().eq('song_id', id);
+  const junctionResult = await withTimeout(supabase.from('event_songs').delete().eq('song_id', id));
   assertNoError(junctionResult.error);
 
-  const result = await supabase.from('songs').delete().eq('id', id);
+  const result = await withTimeout(supabase.from('songs').delete().eq('id', id));
   assertNoError(result.error);
 }
 
@@ -686,7 +686,7 @@ export async function deleteTeamMember(id: string): Promise<void> {
     return;
   }
 
-  const result = await supabase.from('team_members').delete().eq('id', id);
+  const result = await withTimeout(supabase.from('team_members').delete().eq('id', id));
   assertNoError(result.error);
 }
 
@@ -749,10 +749,10 @@ export async function deleteEvent(id: string): Promise<void> {
     return;
   }
 
-  const junctionResult = await supabase.from('event_songs').delete().eq('event_id', id);
+  const junctionResult = await withTimeout(supabase.from('event_songs').delete().eq('event_id', id));
   assertNoError(junctionResult.error);
 
-  const result = await supabase.from('worship_events').delete().eq('id', id);
+  const result = await withTimeout(supabase.from('worship_events').delete().eq('id', id));
   assertNoError(result.error);
 }
 

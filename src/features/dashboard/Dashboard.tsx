@@ -115,16 +115,19 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
       action: () => onSelectEvent(nextService.id),
     });
     
-    if (nextService.songs && nextService.songs.length > 0) {
-      notifications.push({
-        id: `study-songs-${nextService.id}`,
-        type: 'study',
-        title: 'Louvores para estudar!',
-        description: `Você tem ${nextService.songs.length} louvore(s) para revisar antes do ${nextService.title}.`,
-        icon: <Music size={18} className="text-cyan-500" />,
-        bg: 'bg-cyan-500/10',
-        action: () => onSelectEvent(nextService.id),
-      });
+    if (nextService.songs || nextService.offeringSongs || nextService.outroSongs) {
+      const totalSongs = (nextService.songs?.length || 0) + (nextService.offeringSongs?.length || 0) + (nextService.outroSongs?.length || 0);
+      if (totalSongs > 0) {
+        notifications.push({
+          id: `study-songs-${nextService.id}`,
+          type: 'study',
+          title: 'Louvores para estudar!',
+          description: `Você tem ${totalSongs} louvore(s) para revisar antes do ${nextService.title}.`,
+          icon: <Music size={18} className="text-cyan-500" />,
+          bg: 'bg-cyan-500/10',
+          action: () => onSelectEvent(nextService.id),
+        });
+      }
     }
   }
 
@@ -167,12 +170,13 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
         action: () => onSelectEvent(event.id),
       });
       
-      if (event.songs && event.songs.length > 0) {
+      const totalSongs = (event.songs?.length || 0) + (event.offeringSongs?.length || 0) + (event.outroSongs?.length || 0);
+      if (totalSongs > 0) {
         notifications.push({
           id: `study-songs-${event.id}`,
           type: 'study',
           title: 'Louvores para estudar!',
-          description: `Você tem ${event.songs.length} louvore(s) para revisar antes do ${event.title}.`,
+          description: `Você tem ${totalSongs} louvore(s) para revisar antes do ${event.title}.`,
           icon: <Music size={18} className="text-cyan-500" />,
           bg: 'bg-cyan-500/10',
           action: () => onSelectEvent(event.id),
@@ -459,11 +463,11 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
                   <div className="space-y-4">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Liderança e Repertório</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {nextService.songs.slice(0, 4).map(songId => {
+                      {[...(nextService.songs || []), ...(nextService.offeringSongs || []), ...(nextService.outroSongs || [])].slice(0, 4).map((songId, idx) => {
                         const song = songs.find(s => s.id === songId);
                         return (
                           <div
-                            key={songId}
+                            key={`${songId}-${idx}`}
                             className="flex items-center justify-between p-4 bg-white/40 border border-white/60 rounded-2xl transition-all duration-300"
                           >
                             <div className="flex items-center gap-3">
@@ -487,7 +491,7 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
                           </div>
                         );
                       })}
-                      {nextService.songs.length === 0 && (
+                      {((nextService.songs?.length || 0) + (nextService.offeringSongs?.length || 0) + (nextService.outroSongs?.length || 0)) === 0 && (
                           <p className="text-xs text-slate-400 italic p-4">Nenhum louvor selecionado ainda.</p>
                       )}
                     </div>

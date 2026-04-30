@@ -20,12 +20,17 @@ import {
   Repeat,
   Layers,
   Sparkles,
-  Tag
+  Tag,
+  Trash2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WorshipEvent, Song } from '../../types';
 import { BackButton } from '../../components/BackButton';
 import { formatFullDate } from '../../lib/dateUtils';
+import toast from 'react-hot-toast';
 
 interface ScheduleProps {
   events: WorshipEvent[];
@@ -33,22 +38,65 @@ interface ScheduleProps {
   onSelectEvent: (id: string) => void;
   onCreateEvent?: (event: Omit<WorshipEvent, 'id'>) => Promise<void>;
   onUpdateEvent?: (event: WorshipEvent) => Promise<void>;
+  onDeleteEvent?: (id: string) => Promise<void>;
   canEdit?: boolean;
   onBack?: () => void;
 }
 
-export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, onUpdateEvent, canEdit, onBack }: ScheduleProps) {
+function cloneEventForEdit(event: WorshipEvent): WorshipEvent {
+  return {
+    ...event,
+    songs: [...(event.songs ?? [])],
+    offeringSongs: [...(event.offeringSongs ?? [])],
+    outroSongs: [...(event.outroSongs ?? [])],
+    team: {
+      vocal: [...(event.team?.vocal ?? [])],
+      instruments: { ...(event.team?.instruments ?? {}) },
+    },
+    attendance: { ...(event.attendance ?? {}) },
+    songVocals: { ...(event.songVocals ?? {}) },
+  };
+}
+
+function mergeEventEdit(original: WorshipEvent, edit: Partial<WorshipEvent>): WorshipEvent {
+  return {
+    ...original,
+    ...edit,
+    id: original.id,
+    title: edit.title ?? original.title,
+    date: edit.date ?? original.date,
+    time: edit.time ?? original.time,
+    type: edit.type ?? original.type,
+    location: edit.location ?? original.location,
+    description: edit.description ?? original.description,
+    songs: [...(edit.songs ?? original.songs ?? [])],
+    offeringSongs: [...(edit.offeringSongs ?? original.offeringSongs ?? [])],
+    outroSongs: [...(edit.outroSongs ?? original.outroSongs ?? [])],
+    team: {
+      vocal: [...(edit.team?.vocal ?? original.team?.vocal ?? [])],
+      instruments: { ...(edit.team?.instruments ?? original.team?.instruments ?? {}) },
+    },
+    attendance: { ...(edit.attendance ?? original.attendance ?? {}) },
+    songVocals: { ...(edit.songVocals ?? original.songVocals ?? {}) },
+  };
+}
+
+export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, onUpdateEvent, onDeleteEvent, canEdit, onBack }: ScheduleProps) {
   const [view, setView] = useState<'list' | 'calendar'>('calendar');
-  const [filter, setFilter] = useState<'all' | 'rehearsal'>('all');
   const [showWizard, setShowWizard] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [filter, setFilter] = useState<'all' | 'rehearsal' | 'week' | 'month'>('all');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [eventToDelete, setEventToDelete] = useState<WorshipEvent | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Inline Edit State
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<WorshipEvent>>({});
   const [showInlineSongSearch, setShowInlineSongSearch] = useState(false);
   const [inlineSongSearch, setInlineSongSearch] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -78,8 +126,33 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
 
   const filteredEvents = events.filter(e => {
     if (filter === 'rehearsal') return e.type === 'rehearsal';
+    
+    if (filter === 'week') {
+      const eventDate = new Date(e.date + 'T12:00:00');
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      startOfWeek.setHours(0, 0, 0, 0);
+      
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+      endOfWeek.setHours(23, 59, 59, 999);
+      
+      return eventDate >= startOfWeek && eventDate <= endOfWeek;
+    }
+    
+    if (filter === 'month') {
+      const eventDate = new Date(e.date + 'T12:00:00');
+      const now = new Date();
+      return eventDate.getMonth() === now.getMonth() && eventDate.getFullYear() === now.getFullYear();
+    }
+    
     return true;
-  }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }).sort((a, b) => {
+    const timeA = new Date(a.date + 'T' + a.time).getTime();
+    const timeB = new Date(b.date + 'T' + b.time).getTime();
+    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+  });
 
   const formatDate = (dateStr: string) => formatFullDate(dateStr);
 
@@ -226,7 +299,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
   const handleEditClick = (event: WorshipEvent, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingEventId(event.id);
-    setEditForm({ ...event });
+    setEditForm(cloneEventForEdit(event));
     setShowInlineSongSearch(false);
     setInlineSongSearch('');
   };
@@ -240,13 +313,55 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
 
   const handleSaveEdit = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!onUpdateEvent || !editingEventId || !editForm) return;
+    if (!onUpdateEvent || !editingEventId || !editForm || isSavingEdit) return;
+
+    const originalEvent = events.find(event => event.id === editingEventId);
+    if (!originalEvent) return;
+
+    const updatedEvent = mergeEventEdit(originalEvent, editForm);
+
+    if (!updatedEvent.title.trim()) {
+      toast.error('Informe um titulo para o evento.');
+      return;
+    }
+
+    if (!updatedEvent.date || !updatedEvent.time) {
+      toast.error('Informe data e horario do evento.');
+      return;
+    }
+
     try {
-      await onUpdateEvent({ ...editForm } as WorshipEvent);
+      setIsSavingEdit(true);
+      await onUpdateEvent(updatedEvent);
       setEditingEventId(null);
       setEditForm({});
-    } catch {
-      // error handling
+      toast.success('Evento atualizado com sucesso!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao salvar evento: ' + (error.message || 'verifique sua conexao.'));
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteClick = (event: WorshipEvent, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEventToDelete(event);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!onDeleteEvent || !eventToDelete || isDeleting) return;
+
+    try {
+      setIsDeleting(true);
+      await onDeleteEvent(eventToDelete.id);
+      toast.success(`Evento "${eventToDelete.title}" excluído com sucesso!`);
+      setEventToDelete(null);
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao excluir evento: ' + (error.message || 'verifique sua conexão.'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -322,6 +437,32 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
             }`}
           >
             Somente Ensaios
+          </button>
+          <button 
+            onClick={() => setFilter('week')}
+            className={`px-6 py-2.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
+              filter === 'week' ? 'bg-[#00153d] text-white shadow-lg shadow-blue-900/20' : 'bg-white text-slate-500 border border-black/5 hover:bg-slate-50'
+            }`}
+          >
+            Esta Semana
+          </button>
+          <button 
+            onClick={() => setFilter('month')}
+            className={`px-6 py-2.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
+              filter === 'month' ? 'bg-[#00153d] text-white shadow-lg shadow-blue-900/20' : 'bg-white text-slate-500 border border-black/5 hover:bg-slate-50'
+            }`}
+          >
+            Este Mês
+          </button>
+
+          <div className="h-8 w-px bg-slate-200 mx-2 shrink-0 hidden sm:block" />
+
+          <button 
+            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold whitespace-nowrap transition-all bg-white text-slate-500 border border-black/5 hover:bg-slate-50`}
+          >
+            {sortOrder === 'asc' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+            <span>{sortOrder === 'asc' ? 'Mais Antigos' : 'Mais Recentes'}</span>
           </button>
         </div>
         
@@ -498,6 +639,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                           <div className="flex items-center justify-end gap-2">
                             <button 
                               onClick={handleCancelEdit}
+                              disabled={isSavingEdit}
                               className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
                               title="Cancelar edição"
                             >
@@ -505,10 +647,11 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                             </button>
                             <button 
                               onClick={handleSaveEdit}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg transition-all font-bold text-xs"
+                              disabled={isSavingEdit}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg transition-all font-bold text-xs disabled:opacity-50"
                             >
                               <Save size={14} />
-                              <span>Salvar</span>
+                              <span>{isSavingEdit ? 'Salvando...' : 'Salvar'}</span>
                             </button>
                           </div>
                         ) : (
@@ -520,6 +663,15 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                                 title="Editar linha"
                               >
                                 <Edit2 size={16} />
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button 
+                                onClick={(e) => handleDeleteClick(event, e)}
+                                className="p-2 mr-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                title="Excluir evento"
+                              >
+                                <Trash2 size={16} />
                               </button>
                             )}
                             <div className="p-2 text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 rounded-lg transition-all hidden group-hover:flex items-center gap-2 text-xs font-bold w-max">
@@ -561,6 +713,14 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                       <Clock size={14} />
                       <span className="text-xs font-bold">{event.time}</span>
                     </div>
+                    {canEdit && (
+                      <button 
+                        onClick={(e) => handleDeleteClick(event, e)}
+                        className="p-2 text-slate-300 hover:text-red-500 active:bg-red-50 rounded-lg transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
 
                   <div>
@@ -573,20 +733,24 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                     <div className="flex flex-wrap gap-1">
-                      {event.songs.length === 0 ? (
-                        <span className="text-[10px] font-medium text-slate-400 italic">Sem repertório</span>
-                      ) : (
-                        <>
-                          <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded-md truncate max-w-[150px]">
-                            {getSongTitle(event.songs[0])}
-                          </span>
-                          {event.songs.length > 1 && (
-                            <span className="text-[10px] font-black text-blue-700 bg-blue-100 px-2 py-1 rounded-md">
-                              +{event.songs.length - 1}
+                      {(() => {
+                        const allSongs = [...(event.songs || []), ...(event.offeringSongs || []), ...(event.outroSongs || [])];
+                        if (allSongs.length === 0) {
+                          return <span className="text-[10px] font-medium text-slate-400 italic">Sem repertório</span>;
+                        }
+                        return (
+                          <>
+                            <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded-md truncate max-w-[150px]">
+                              {getSongTitle(allSongs[0])}
                             </span>
-                          )}
-                        </>
-                      )}
+                            {allSongs.length > 1 && (
+                              <span className="text-[10px] font-black text-blue-700 bg-blue-100 px-2 py-1 rounded-md">
+                                +{allSongs.length - 1}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     <ChevronRight size={18} className="text-slate-300" />
                   </div>
@@ -739,7 +903,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                           </div>
                           <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
                             <Music size={12} />
-                            <span>{evt.songs.length} músicas</span>
+                            <span>{(evt.songs?.length || 0) + (evt.offeringSongs?.length || 0) + (evt.outroSongs?.length || 0)} músicas</span>
                           </div>
                         </div>
                       </div>
@@ -1114,6 +1278,51 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                      </div>
                   )}
                </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {eventToDelete && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-[#00153d]/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden apple-shadow p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={32} />
+              </div>
+              <h3 className="text-xl font-headline font-extrabold text-[#00153d] mb-2">Excluir Evento?</h3>
+              <p className="text-sm text-slate-500 mb-8">
+                Deseja realmente excluir o evento <span className="font-bold text-slate-700">"{eventToDelete.title}"</span>? Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setEventToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-900/20 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Excluindo...</span>
+                    </>
+                  ) : (
+                    <span>Sim, Excluir</span>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

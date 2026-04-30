@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -103,6 +103,46 @@ const getAvatarColor = (name: string) => {
   }
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 };
+
+function cloneEditableEvent(event: WorshipEvent): WorshipEvent {
+  return {
+    ...event,
+    songs: [...(event.songs ?? [])],
+    offeringSongs: [...(event.offeringSongs ?? [])],
+    outroSongs: [...(event.outroSongs ?? [])],
+    team: {
+      vocal: [...(event.team?.vocal ?? [])],
+      instruments: { ...(event.team?.instruments ?? {}) },
+    },
+    attendance: { ...(event.attendance ?? {}) },
+    songVocals: { ...(event.songVocals ?? {}) },
+  };
+}
+
+function serializeEditableEvent(event: WorshipEvent) {
+  return JSON.stringify({
+    id: event.id,
+    date: event.date,
+    time: event.time,
+    title: event.title,
+    type: event.type,
+    location: event.location ?? '',
+    description: event.description ?? '',
+    songs: event.songs ?? [],
+    offeringSongs: event.offeringSongs ?? [],
+    outroSongs: event.outroSongs ?? [],
+    team: {
+      vocal: event.team?.vocal ?? [],
+      instruments: event.team?.instruments ?? {},
+    },
+    attendance: event.attendance ?? {},
+    songVocals: event.songVocals ?? {},
+  });
+}
+
+function hasEventChanges(original: WorshipEvent, draft: WorshipEvent) {
+  return serializeEditableEvent(original) !== serializeEditableEvent(draft);
+}
 
 function DroppableZone({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
   const { setNodeRef } = useDroppable({ id });
@@ -332,7 +372,8 @@ function SortableSongItem({
 
 export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false, userSongStudy = [], onToggleStudySong, onRefreshBlockChange }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [editedEvent, setEditedEvent] = useState<WorshipEvent>({ ...event });
+  const lastSyncedEventRef = useRef<WorshipEvent>(cloneEditableEvent(event));
+  const [editedEvent, setEditedEvent] = useState<WorshipEvent>(() => cloneEditableEvent(event));
   const [editingSongMetadata, setEditingSongMetadata] = useState<Song | null>(null);
   const [expandedSongId, setExpandedSongId] = useState<string | null>(null);
   const [showAddSongModal, setShowAddSongModal] = useState<'main' | 'offering' | 'outro' | null>(null);
@@ -341,10 +382,6 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const [showMyAttendanceReview, setShowMyAttendanceReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [songSearchQuery, setSongSearchQuery] = useState('');
-
-  useEffect(() => {
-    setEditedEvent({ ...event });
-  }, [event]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -371,14 +408,30 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
 
   const hasUnsavedChanges = useMemo(() => {
     if (!event || !editedEvent) return false;
-    
-    if (JSON.stringify(event.songs || []) !== JSON.stringify(editedEvent.songs || [])) return true;
-    if (JSON.stringify(event.offeringSongs || []) !== JSON.stringify(editedEvent.offeringSongs || [])) return true;
-    if (JSON.stringify(event.outroSongs || []) !== JSON.stringify(editedEvent.outroSongs || [])) return true;
-    if (JSON.stringify(event.songVocals || {}) !== JSON.stringify(editedEvent.songVocals || {})) return true;
-    
-    return false;
+    return hasEventChanges(event, editedEvent);
   }, [event, editedEvent]);
+
+  useEffect(() => {
+    const nextSyncedEvent = cloneEditableEvent(event);
+
+    setEditedEvent((currentDraft) => {
+      const previousSyncedEvent = lastSyncedEventRef.current;
+      const switchedEvent = currentDraft.id !== nextSyncedEvent.id || previousSyncedEvent.id !== nextSyncedEvent.id;
+      const draftHasLocalChanges = hasEventChanges(previousSyncedEvent, currentDraft);
+
+      lastSyncedEventRef.current = nextSyncedEvent;
+
+      if (switchedEvent) {
+        return nextSyncedEvent;
+      }
+
+      if (isEditing || isSaving || draftHasLocalChanges) {
+        return currentDraft;
+      }
+
+      return nextSyncedEvent;
+    });
+  }, [event, isEditing, isSaving]);
 
   useEffect(() => {
     const blocksRefresh = isEditing || isSaving || hasUnsavedChanges;
@@ -1036,17 +1089,21 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
               {!hasUnsavedChanges && (
                 <button
                   onClick={() => setShowMyAttendanceReview(true)}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-[#00153d] text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all active:scale-95"
+                  className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all active:scale-95 ${
+                    editedEvent.attendance?.[userProfile?.name || ''] 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-[#00153d] text-white'
+                  }`}
                 >
                   <CheckCircle2 size={20} />
-                  <span>Confirmar Presença</span>
+                  <span>{editedEvent.attendance?.[userProfile?.name || ''] ? 'Presença Confirmada' : 'Confirmar Presença'}</span>
                 </button>
               )}
               
               {hasUnsavedChanges ? (
                 <>
                   <button
-                    onClick={() => setEditedEvent(event)}
+                    onClick={() => setEditedEvent(cloneEditableEvent(event))}
                     disabled={isSaving}
                     className="flex-1 px-6 py-4 bg-white text-slate-500 rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all disabled:opacity-50 active:scale-95 border border-black/5"
                   >
@@ -1077,7 +1134,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             <>
               <button
                 onClick={() => {
-                  setEditedEvent({ ...event });
+                  setEditedEvent(cloneEditableEvent(event));
                   setIsEditing(false);
                 }}
                 disabled={isSaving}
@@ -1579,33 +1636,60 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     
                     try {
                       setIsSaving(true);
-                      const updatedAttendance = { ...(editedEvent.attendance || {}) };
-                      updatedAttendance[userProfile.name] = true;
                       
+                      // Encontrar a melhor chave para o nome do usuário na presença
+                      // 1. Tentar encontrar o nome exato do usuário na lista da escala
+                      const nameInTeam = scaledMembers.find(m => m.trim().toLowerCase() === userProfile.name.trim().toLowerCase());
+                      const targetName = nameInTeam || userProfile.name;
+                      
+                      // 2. Verificar se já está confirmado (usando busca robusta)
+                      const isCurrentlyConfirmed = isConfirmed(targetName);
+                      
+                      // 3. Preparar o novo objeto de presença
+                      const updatedAttendance = { ...(editedEvent.attendance || {}) };
+                      
+                      // Limpar possíveis chaves duplicadas (ex: se o usuário estiver com nome diferente)
+                      Object.keys(updatedAttendance).forEach(key => {
+                        if (key.trim().toLowerCase() === targetName.trim().toLowerCase()) {
+                          updatedAttendance[key] = !isCurrentlyConfirmed;
+                        }
+                      });
+                      
+                      // Garantir que a chave alvo está definida
+                      updatedAttendance[targetName] = !isCurrentlyConfirmed;
+                      
+                      // Atualizar estado local imediatamente para feedback instantâneo
+                      setEditedEvent(prev => ({ ...prev, attendance: updatedAttendance }));
+                      
+                      // Salvar no banco
                       await onUpdate({ ...editedEvent, attendance: updatedAttendance });
                       
-                      toast.success('Presença confirmada com sucesso!');
+                      if (isCurrentlyConfirmed) {
+                         toast.success('Presença desmarcada.');
+                      } else {
+                         toast.success('Presença confirmada com sucesso!');
+                      }
                       setShowMyAttendanceReview(false);
                     } catch (error: any) {
                       console.error(error);
-                      toast.error('Erro ao confirmar presença: ' + (error.message || 'Verifique sua conexão.'));
+                      toast.error('Erro ao atualizar presença: ' + (error.message || 'Verifique sua conexão.'));
                     } finally {
                       setIsSaving(false);
                     }
                   }}
-                  disabled={isSaving || (editedEvent.attendance?.[userProfile.name] ?? false)}
+                  disabled={isSaving}
                   className={`w-full py-5 rounded-[2rem] font-bold shadow-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-3 ${
-                    editedEvent.attendance?.[userProfile.name]
-                      ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                    isConfirmed(userProfile.name)
+                      ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
                       : 'bg-[#00153d] text-white hover:opacity-90'
                   }`}
                 >
                   {isSaving ? (
                     <LoaderCircle size={24} className="animate-spin" />
-                  ) : editedEvent.attendance?.[userProfile.name] ? (
+                  ) : isConfirmed(userProfile.name) ? (
                     <>
-                      <CheckCircle2 size={24} />
-                      <span>Sua Presença já está Confirmada!</span>
+                      <X size={24} />
+                      <span>Desmarcar Minha Presença</span>
                     </>
                   ) : (
                     <>
@@ -1614,7 +1698,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     </>
                   )}
                 </button>
-                {!editedEvent.attendance?.[userProfile.name] && (
+                {!isConfirmed(userProfile.name) && (
                   <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4">
                     Ao confirmar, você se compromete com este evento
                   </p>
