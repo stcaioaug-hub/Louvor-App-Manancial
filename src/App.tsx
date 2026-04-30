@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { AlertCircle, LoaderCircle, PlusCircle, RefreshCcw, Settings as SettingsIcon, PanelLeft, ChevronLeft } from 'lucide-react';
+import { AlertCircle, CheckCircle2, LoaderCircle, PlusCircle, RefreshCcw, Settings as SettingsIcon, PanelLeft, ChevronLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { BackButton } from './components/BackButton';
 import Sidebar from './components/Sidebar';
@@ -50,9 +50,10 @@ import {
   toggleStudySong,
   updateStudySongStatus,
 } from './lib/appData';
+import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from './types';
 import { User } from '@supabase/supabase-js';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 
 // Polyfill for useEffectEvent (experimental in React 19)
 function useEvent<T extends (...args: any[]) => any>(fn: T): T {
@@ -71,6 +72,49 @@ function formatErrorMessage(error: unknown) {
   }
 
   return 'Nao foi possivel sincronizar os dados com o Supabase.';
+}
+
+function PullToRefreshIndicator({
+  distance,
+  status,
+}: {
+  distance: number;
+  status: 'idle' | 'pulling' | 'ready' | 'refreshing' | 'done';
+}) {
+  if (status === 'idle') {
+    return null;
+  }
+
+  const labelByStatus = {
+    pulling: 'Puxe para atualizar',
+    ready: 'Solte para atualizar',
+    refreshing: 'Atualizando...',
+    done: 'Atualizado',
+  };
+
+  const icon =
+    status === 'done' ? (
+      <CheckCircle2 size={18} className="text-emerald-600" />
+    ) : status === 'refreshing' ? (
+      <LoaderCircle size={18} className="animate-spin text-blue-600" />
+    ) : (
+      <RefreshCcw size={18} className="text-blue-600" />
+    );
+
+  const translateY = Math.min(distance, 72) - 56;
+
+  return (
+    <div
+      className="fixed left-1/2 top-0 z-[120] md:hidden pointer-events-none transition-transform duration-150"
+      style={{ transform: `translate3d(-50%, ${translateY}px, 0)` }}
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 text-xs font-extrabold text-[#00153d] shadow-xl ring-1 ring-blue-100/80 backdrop-blur-xl">
+        {icon}
+        <span>{labelByStatus[status]}</span>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -92,6 +136,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
+  const [isPullRefreshBlocked, setIsPullRefreshBlocked] = useState(false);
   
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -110,6 +155,7 @@ export default function App() {
   );
 
   const isFetchingRef = useRef(false);
+  const pendingFetchRef = useRef(false);
 
   const applyAppData = useEvent((data: {
     songs: Song[];
@@ -133,7 +179,10 @@ export default function App() {
 
   const loadData = useEvent(
     async ({ withLoading = false, allowSeed = false }: { withLoading?: boolean; allowSeed?: boolean } = {}) => {
-      if (isFetchingRef.current) return;
+      if (isFetchingRef.current) {
+        pendingFetchRef.current = true;
+        return;
+      }
       isFetchingRef.current = true;
       try {
         if (withLoading) {
@@ -163,9 +212,23 @@ export default function App() {
         if (withLoading) {
           setIsLoading(false);
         }
+        if (pendingFetchRef.current) {
+          pendingFetchRef.current = false;
+          void loadData();
+        }
       }
     }
   );
+
+  const handlePullRefresh = useEvent(async () => {
+    await loadData({ withLoading: false });
+  });
+
+  const handleBlockedPullRefresh = useEvent(() => {
+    toast('Salve ou descarte as alterações antes de atualizar.', {
+      icon: '!',
+    });
+  });
 
   // Auth Effect
   useEffect(() => {
@@ -486,6 +549,7 @@ export default function App() {
         isSidebarHidden={isSidebarHidden}
         userSongStudy={userSongStudy}
         onToggleStudySong={handleToggleStudySong}
+        onRefreshBlockChange={setIsPullRefreshBlocked}
       />
     );
   };
@@ -659,6 +723,14 @@ export default function App() {
     );
   };
 
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/onboarding';
+  const pullToRefresh = usePullToRefresh({
+    enabled: !isAuthRoute && !isLoading && !isAuthLoading,
+    canRefresh: !isPullRefreshBlocked,
+    onRefresh: handlePullRefresh,
+    onBlockedRefresh: handleBlockedPullRefresh,
+  });
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8f8fc]">
@@ -667,10 +739,10 @@ export default function App() {
     );
   }
 
-  const isAuthRoute = location.pathname === '/login' || location.pathname === '/onboarding';
-
   return (
     <div className="min-h-screen manancial-gradient relative overflow-x-hidden">
+      <PullToRefreshIndicator distance={pullToRefresh.distance} status={pullToRefresh.status} />
+
       {/* Background Decorative Ripples */}
       <div className="fixed top-0 left-0 w-full h-full opacity-[0.03] pointer-events-none z-0">
         <div className="absolute top-[-20%] right-[-10%] w-[70%] h-[70%] bg-blue-600 rounded-full blur-[150px]" />

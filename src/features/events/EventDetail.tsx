@@ -64,6 +64,7 @@ interface EventDetailProps {
   isSidebarHidden?: boolean;
   userSongStudy?: UserSongStudy[];
   onToggleStudySong?: (songId: string) => Promise<void>;
+  onRefreshBlockChange?: (blocked: boolean) => void;
 }
 
 interface SortableSongItemProps {
@@ -329,7 +330,7 @@ function SortableSongItem({
 );
 }
 
-export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false, userSongStudy = [], onToggleStudySong }: EventDetailProps) {
+export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false, userSongStudy = [], onToggleStudySong, onRefreshBlockChange }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedEvent, setEditedEvent] = useState<WorshipEvent>({ ...event });
   const [editingSongMetadata, setEditingSongMetadata] = useState<Song | null>(null);
@@ -378,6 +379,15 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
     
     return false;
   }, [event, editedEvent]);
+
+  useEffect(() => {
+    const blocksRefresh = isEditing || isSaving || hasUnsavedChanges;
+    onRefreshBlockChange?.(blocksRefresh);
+
+    return () => {
+      onRefreshBlockChange?.(false);
+    };
+  }, [hasUnsavedChanges, isEditing, isSaving, onRefreshBlockChange]);
 
   const handleQuickSave = async (newEvent: WorshipEvent) => {
     setEditedEvent(newEvent);
