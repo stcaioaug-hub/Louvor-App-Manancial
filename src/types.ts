@@ -49,6 +49,12 @@ export interface Song {
     lyrics?: string;
     video?: string;
   };
+  linkOptions?: {
+    chords?: LinkOption[];
+    lyrics?: LinkOption[];
+    video?: LinkOption[];
+    cover?: LinkOption[];
+  };
   createdAt?: string;
   rehearsalStatus?: RehearsalStatus;
   teamKnowledge?: TeamKnowledge;
@@ -63,6 +69,11 @@ export interface Song {
   defaultLeadVocal?: string;
   originalKey?: string;
   vocalUrl?: string;
+}
+
+export interface LinkOption {
+  label: string;
+  url: string;
 }
 
 export type EventType = 'service' | 'rehearsal';
@@ -97,6 +108,7 @@ export interface TeamMember {
   category: string;
   avatar?: string;
   isLeader?: boolean;
+  user_id?: string;
 }
 export interface RehearsalReport {
   id: string;

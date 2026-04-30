@@ -184,7 +184,7 @@ export default function Sidebar({
 
       {/* Mobile Bottom Navigation */}
       {showMobileNav && (
-        <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[100]">
+        <nav className="mobile-safe-nav md:hidden fixed z-[100]">
           {/* Main bar */}
           <div className="h-20 glass rounded-[2rem] flex items-center px-2 border border-white/50 shadow-2xl relative">
             {/* Left side: Perfil + Calendário */}
@@ -296,4 +296,3 @@ export default function Sidebar({
     </>
   );
 }
-

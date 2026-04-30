@@ -3,12 +3,13 @@ import {
   X, Save, Trash2, ChevronLeft, ChevronRight, Sparkles, Loader2, Music
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Song } from '../../types';
+import { LinkOption, Song } from '../../types';
 import { transposeKey, toggleMinorKey } from '../../lib/chordTransposer';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { enrichSongData, searchSongs, SongSuggestionResult } from '../../lib/gemini';
 import { toast } from 'react-hot-toast';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useModalViewportLock } from '../../hooks/useModalViewportLock';
 
 const SAVE_TIMEOUT_MS = 25000;
 
@@ -63,7 +64,52 @@ function getSaveErrorMessage(error: unknown) {
   return message ? `Erro ao salvar louvor: ${message}` : 'Erro ao salvar louvor.';
 }
 
+interface LinkUrlControlProps {
+  label: string;
+  placeholder: string;
+  value: string;
+  options?: LinkOption[];
+  onChange: (value: string) => void;
+}
+
+function LinkUrlControl({ label, placeholder, value, options = [], onChange }: LinkUrlControlProps) {
+  const availableOptions = options.filter((option) => option.url.trim());
+
+  return (
+    <div className="flex flex-col sm:flex-row gap-2">
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 flex-1 px-4 py-3 bg-slate-50 border border-black/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+      />
+      {availableOptions.length > 0 && (
+        <select
+          aria-label={`Opções para ${label}`}
+          value=""
+          onChange={(event) => {
+            if (event.target.value) {
+              onChange(event.target.value);
+            }
+          }}
+          className="sm:w-44 px-4 py-3 bg-white border border-blue-100 text-[#00153d] rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-xs font-bold"
+        >
+          <option value="" disabled>Opções</option>
+          {availableOptions.map((option) => (
+            <option key={`${label}-${option.label}-${option.url}`} value={option.url}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongEditorModalProps) => {
+  useModalViewportLock(true);
+
   const [formData, setFormData] = useState<Song>({ ...song });
   const [tagsInput, setTagsInput] = useState(song.tags.join(', '));
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -200,6 +246,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
         lyrics: formData.links.lyrics?.trim() || undefined,
         video: formData.links.video?.trim() || undefined,
       },
+      cover_url: formData.cover_url?.trim() || undefined,
     };
 
     if (!cleanedSong.title || !cleanedSong.artist || !cleanedSong.key) {
@@ -235,7 +282,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -281,7 +328,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-black/5 z-[110] overflow-hidden"
+                        className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-black/5 z-[210] overflow-hidden"
                       >
                         {suggestions.map((suggestion, index) => (
                           <button
@@ -534,24 +581,24 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                   Link do Vídeo (YouTube)
                 </label>
-                <input
-                  type="text"
+                <LinkUrlControl
+                  label="vídeo"
                   placeholder="https://youtube.com/..."
                   value={formData.links.video ?? ''}
-                  onChange={(event) =>
+                  options={formData.linkOptions?.video}
+                  onChange={(value) =>
                     setFormData({
                       ...formData,
-                      links: { ...formData.links, video: event.target.value },
+                      links: { ...formData.links, video: value },
                     })
                   }
-                  className="w-full px-4 py-3 bg-slate-50 border border-black/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                   URL da Capa (Imagem)
                 </label>
-                <div className="flex gap-4 items-start">
+                <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
                   {coverUrl && (
                     <div className="w-20 h-20 rounded-2xl overflow-hidden border border-black/5 shrink-0 bg-slate-100">
                       <img
@@ -570,43 +617,63 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
                       setBrokenCoverUrl('');
                       setFormData({ ...formData, cover_url: event.target.value });
                     }}
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-black/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    className="min-w-0 flex-1 px-4 py-3 bg-slate-50 border border-black/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                   />
+                  {(formData.linkOptions?.cover?.length ?? 0) > 0 && (
+                    <select
+                      aria-label="Opções para capa"
+                      value=""
+                      onChange={(event) => {
+                        if (event.target.value) {
+                          setBrokenCoverUrl('');
+                          setFormData({ ...formData, cover_url: event.target.value });
+                        }
+                      }}
+                      className="sm:w-36 px-3 py-3 bg-white border border-blue-100 text-[#00153d] rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-xs font-bold"
+                    >
+                      <option value="" disabled>Opções</option>
+                      {formData.linkOptions?.cover?.map((option) => (
+                        <option key={`cover-${option.label}-${option.url}`} value={option.url}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                     Link da Cifra
                   </label>
-                  <input
-                    type="text"
+                  <LinkUrlControl
+                    label="cifra"
                     placeholder="https://cifraclub.com/..."
                     value={formData.links.chords ?? ''}
-                    onChange={(event) =>
+                    options={formData.linkOptions?.chords}
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        links: { ...formData.links, chords: event.target.value },
+                        links: { ...formData.links, chords: value },
                       })
                     }
-                    className="w-full px-4 py-3 bg-slate-50 border border-black/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                     Link da Letra
                   </label>
-                  <input
-                    type="text"
+                  <LinkUrlControl
+                    label="letra"
                     placeholder="https://letras.mus.br/..."
                     value={formData.links.lyrics ?? ''}
-                    onChange={(event) =>
+                    options={formData.linkOptions?.lyrics}
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        links: { ...formData.links, lyrics: event.target.value },
+                        links: { ...formData.links, lyrics: value },
                       })
                     }
-                    className="w-full px-4 py-3 bg-slate-50 border border-black/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                   />
                 </div>
               </div>

@@ -2,6 +2,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { Song, TeamMember, WorshipEvent, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from '../types';
 import { isConfigured, supabase, supabaseConfigMessage } from './supabase';
 import { INITIAL_EVENTS, INITIAL_SONGS, INITIAL_TEAM } from './seedData';
+import { applySongCatalog, applySongCatalogToList } from './songCatalog';
 
 type SongDraft = Omit<Song, 'id'>;
 type TeamMemberDraft = Omit<TeamMember, 'id'>;
@@ -46,6 +47,7 @@ interface TeamMemberRow {
   category: string;
   avatar_url: string | null;
   is_leader: boolean | null;
+  user_id: string | null;
 }
 
 interface WorshipEventRow {
@@ -164,6 +166,14 @@ function cloneSong(song: Song): Song {
     ...song,
     tags: [...song.tags],
     links: { ...song.links },
+    linkOptions: song.linkOptions
+      ? {
+          chords: song.linkOptions.chords?.map((option) => ({ ...option })),
+          lyrics: song.linkOptions.lyrics?.map((option) => ({ ...option })),
+          video: song.linkOptions.video?.map((option) => ({ ...option })),
+          cover: song.linkOptions.cover?.map((option) => ({ ...option })),
+        }
+      : undefined,
   };
 }
 
@@ -300,6 +310,7 @@ function mapTeamMemberRow(row: TeamMemberRow): TeamMember {
     category: row.category,
     avatar: row.avatar_url ?? undefined,
     isLeader: row.is_leader ?? false,
+    user_id: row.user_id ?? undefined,
   };
 }
 
@@ -342,6 +353,7 @@ function mapTeamMemberToRow(member: TeamMember | TeamMemberDraft) {
     category: member.category.trim(),
     avatar_url: member.avatar?.trim() || null,
     is_leader: member.isLeader ?? false,
+    user_id: 'user_id' in member ? member.user_id : null,
   };
 }
 
@@ -391,7 +403,7 @@ function buildEventSongsPayload(event: WorshipEvent) {
 
 function createInitialLocalData(): AppData {
   return {
-    songs: sortSongs(INITIAL_SONGS.map(cloneSong)),
+    songs: sortSongs(applySongCatalogToList(INITIAL_SONGS.map(cloneSong))),
     team: sortTeam(INITIAL_TEAM.map(cloneTeamMember)),
     events: sortEvents(INITIAL_EVENTS.map(cloneEvent)),
     rehearsalReports: [],
@@ -417,10 +429,13 @@ export function getAppModeMessage() {
 
 export async function fetchAppData(): Promise<AppData> {
   if (!isConfigured) {
-    return cloneAppData(localData);
+    return {
+      ...cloneAppData(localData),
+      songs: sortSongs(applySongCatalogToList(localData.songs.map(cloneSong))),
+    };
   }
 
-  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult, suggestionsResult, notificationsResult, readResult, studyResult] = await Promise.all([
+  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult, suggestionsResult, notificationsResult, readResult, studyResult] = await withTimeout(Promise.all([
     supabase.from('songs').select('*').order('title', { ascending: true }),
     supabase.from('team_members').select('*').order('name', { ascending: true }),
     supabase.from('worship_events').select('*').order('date', { ascending: true }).order('time', { ascending: true }),
@@ -430,7 +445,7 @@ export async function fetchAppData(): Promise<AppData> {
     supabase.from('app_notifications').select('*').order('created_at', { ascending: false }),
     supabase.from('user_notifications_read').select('*'),
     supabase.from('user_song_study').select('*'),
-  ]);
+  ]));
 
   assertNoError(songsResult.error);
   assertNoError(teamResult.error);
@@ -441,7 +456,7 @@ export async function fetchAppData(): Promise<AppData> {
   assertNoError(readResult.error);
   assertNoError(studyResult.error);
 
-  const songs = sortSongs((songsResult.data ?? []).map((row) => mapSongRow(row as SongRow)));
+  const songs = sortSongs((songsResult.data ?? []).map((row) => applySongCatalog(mapSongRow(row as SongRow))));
   const team = sortTeam((teamResult.data ?? []).map((row) => mapTeamMemberRow(row as TeamMemberRow)));
   const eventSongsByEvent = new Map<string, { main: string[]; offering: string[]; outro: string[]; vocals: Record<string, string> }>();
 

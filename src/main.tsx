@@ -5,6 +5,11 @@ import { Toaster } from 'react-hot-toast';
 import App from './App.tsx';
 import './index.css';
 
+const safeToasterContainerStyle = {
+  top: 'calc(1rem + env(safe-area-inset-top, 0px))',
+  right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+};
+
 if (import.meta.env.DEV && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
@@ -33,7 +38,11 @@ if (import.meta.env.DEV && 'serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <Toaster position="top-right" toastOptions={{ duration: 4000, style: { background: '#fff', color: '#00153d', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' } }} />
+      <Toaster
+        position="top-right"
+        containerStyle={safeToasterContainerStyle}
+        toastOptions={{ duration: 4000, style: { background: '#fff', color: '#00153d', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' } }}
+      />
       <App />
     </BrowserRouter>
   </StrictMode>,

@@ -18,6 +18,7 @@ import SongDetail from './features/songs/SongDetail';
 import Schedule from './features/events/Schedule';
 import EventDetail from './features/events/EventDetail';
 import TeamList from './features/team/TeamList';
+import { TeamMemberProfile } from './features/team/TeamMemberProfile';
 import Login from './features/auth/Login';
 import Settings from './features/settings/Settings';
 import ProfileMenu from './features/settings/ProfileMenu';
@@ -53,7 +54,7 @@ import {
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from './types';
 import { User } from '@supabase/supabase-js';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 
 // Polyfill for useEffectEvent (experimental in React 19)
 function useEvent<T extends (...args: any[]) => any>(fn: T): T {
@@ -105,7 +106,7 @@ function PullToRefreshIndicator({
 
   return (
     <div
-      className="fixed left-1/2 top-0 z-[120] md:hidden pointer-events-none transition-transform duration-150"
+      className="safe-pull-indicator fixed left-1/2 z-[120] md:hidden pointer-events-none transition-transform duration-150"
       style={{ transform: `translate3d(-50%, ${translateY}px, 0)` }}
       aria-live="polite"
     >
@@ -234,6 +235,7 @@ export default function App() {
 
   const isFetchingRef = useRef(false);
   const pendingFetchRef = useRef(false);
+  const activeFetchPromiseRef = useRef<Promise<void> | null>(null);
 
   const applyAppData = useEvent((data: {
     songs: Song[];
@@ -259,40 +261,55 @@ export default function App() {
     async ({ withLoading = false, allowSeed = false }: { withLoading?: boolean; allowSeed?: boolean } = {}) => {
       if (isFetchingRef.current) {
         pendingFetchRef.current = true;
+        await activeFetchPromiseRef.current;
         return;
       }
+
       isFetchingRef.current = true;
+
+      const fetchPromise = (async () => {
+        try {
+          if (withLoading) {
+            setIsLoading(true);
+          }
+
+          setErrorMessage(null);
+
+          let data = await fetchAppData();
+
+          if (
+            allowSeed &&
+            !seededRef.current &&
+            data.songs.length === 0 &&
+            data.team.length === 0 &&
+            data.events.length === 0
+          ) {
+            seededRef.current = true;
+            data = await seedInitialData();
+          }
+
+          applyAppData(data);
+        } catch (error) {
+          setErrorMessage(formatErrorMessage(error));
+        } finally {
+          isFetchingRef.current = false;
+          if (withLoading) {
+            setIsLoading(false);
+          }
+          if (pendingFetchRef.current) {
+            pendingFetchRef.current = false;
+            await loadData();
+          }
+        }
+      })();
+
+      activeFetchPromiseRef.current = fetchPromise;
+
       try {
-        if (withLoading) {
-          setIsLoading(true);
-        }
-
-        setErrorMessage(null);
-
-        let data = await fetchAppData();
-
-        if (
-          allowSeed &&
-          !seededRef.current &&
-          data.songs.length === 0 &&
-          data.team.length === 0 &&
-          data.events.length === 0
-        ) {
-          seededRef.current = true;
-          data = await seedInitialData();
-        }
-
-        applyAppData(data);
-      } catch (error) {
-        setErrorMessage(formatErrorMessage(error));
+        await fetchPromise;
       } finally {
-        isFetchingRef.current = false;
-        if (withLoading) {
-          setIsLoading(false);
-        }
-        if (pendingFetchRef.current) {
-          pendingFetchRef.current = false;
-          void loadData();
+        if (activeFetchPromiseRef.current === fetchPromise) {
+          activeFetchPromiseRef.current = null;
         }
       }
     }
@@ -705,6 +722,14 @@ export default function App() {
           />
         } />
         
+        <Route path="/app/team/:id" element={
+          <TeamMemberProfile 
+            team={team}
+            songs={songs}
+            userSongStudy={userSongStudy}
+          />
+        } />
+        
         <Route path="/app/new-songs" element={
           <NewSongs
             songs={songs}
@@ -806,7 +831,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen manancial-gradient relative overflow-x-hidden">
+    <div className="app-viewport min-h-screen manancial-gradient relative overflow-x-hidden">
       <PullToRefreshIndicator distance={pullToRefresh.distance} status={pullToRefresh.status} />
 
       {/* Background Decorative Ripples */}
@@ -835,7 +860,13 @@ export default function App() {
         </button>
       )}
 
-      <main className={`relative z-10 transition-all duration-500 ease-in-out ${isAuthRoute ? 'w-full' : isSidebarHidden ? 'p-6 md:p-12 w-full max-w-[1600px] mx-auto pb-40 md:pb-12' : 'md:pl-80 p-6 md:p-12 max-w-7xl mx-auto pb-40 md:pb-12'}`}>
+      <main className={`app-main-shell relative z-10 transition-all duration-500 ease-in-out ${
+        isAuthRoute
+          ? 'app-main-shell--auth w-full'
+          : isSidebarHidden
+            ? 'w-full max-w-[1600px] mx-auto'
+            : 'app-main-shell--with-sidebar max-w-7xl mx-auto'
+      }`}>
         {appMode === 'local' && (
           <div className="mb-8 flex flex-col gap-4 rounded-[2.5rem] glass border border-blue-200/50 px-8 py-6 text-blue-900 shadow-xl overflow-hidden relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16" />
@@ -910,7 +941,6 @@ export default function App() {
         )}
       </main>
 
-      <Toaster position="top-right" />
     </div>
   );
 }

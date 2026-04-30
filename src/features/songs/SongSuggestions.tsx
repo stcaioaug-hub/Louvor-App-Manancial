@@ -195,19 +195,19 @@ export default function SongSuggestions({
 
   return (
     <div className="space-y-8 pb-12">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <BackButton onClick={onBack} />
-          <div>
-            <h2 className="text-3xl font-headline font-extrabold text-[#00153d]">Sugestões de Louvores</h2>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
+          <BackButton onClick={onBack} className="shrink-0 mt-1" />
+          <div className="min-w-0">
+            <h2 className="text-3xl leading-tight font-headline font-extrabold text-[#00153d]">Sugestões de Louvores</h2>
             <p className="text-slate-500 font-medium">Ajude a construir nosso repertório.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full items-center justify-end gap-3 sm:w-auto sm:shrink-0">
           {isMinister && (
             <button
               onClick={() => setIsNotifying(true)}
-              className="flex items-center gap-2 px-5 py-3 glass text-blue-600 rounded-[1.2rem] font-bold text-sm shadow-md hover:bg-blue-50 transition-all border border-blue-200"
+              className="flex items-center justify-center gap-2 px-5 py-3 glass text-blue-600 rounded-[1.2rem] font-bold text-sm shadow-md hover:bg-blue-50 transition-all border border-blue-200"
             >
               <BellRing size={18} />
               <span className="hidden sm:inline">Disparar Lembrete</span>
@@ -215,7 +215,7 @@ export default function SongSuggestions({
           )}
           <button
             onClick={() => setIsAdding(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-[1.2rem] font-bold text-sm shadow-lg hover:bg-blue-700 transition-all"
+            className="flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-[1.2rem] font-bold text-sm shadow-lg hover:bg-blue-700 transition-all"
           >
             <Plus size={18} />
             <span className="hidden sm:inline">Sugerir Louvor</span>

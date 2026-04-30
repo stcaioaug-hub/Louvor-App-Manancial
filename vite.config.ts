@@ -18,6 +18,10 @@ export default defineConfig(({mode}) => {
           short_name: 'Min Manancial',
           description: 'Aplicativo do Ministério de Louvor Manancial para gestão de louvores.',
           theme_color: '#003366',
+          background_color: '#ffffff',
+          display: 'standalone',
+          scope: '/',
+          start_url: '/',
           icons: [
             {
               src: 'icons/pwa-192x192.png',
@@ -38,7 +42,9 @@ export default defineConfig(({mode}) => {
           ],
         },
         devOptions: {
-          enabled: false,
+          enabled: true,
+          type: 'module',
+          navigateFallback: 'index.html',
         },
       }),
     ],

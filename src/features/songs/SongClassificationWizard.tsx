@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Check, X, ArrowRight, CornerUpLeft } from 'lucide-react';
 import { Song, RehearsalStatus, TeamKnowledge, RehearsalNeed, AttentionLevel } from '../../types';
+import { useModalViewportLock } from '../../hooks/useModalViewportLock';
 
 interface SongClassificationWizardProps {
   songs: Song[];
@@ -51,6 +52,8 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
 
   const [isSaving, setIsSaving] = useState(false);
 
+  useModalViewportLock(true);
+
   // When changing song, reset form states
   React.useEffect(() => {
     if (currentSong) {
@@ -70,7 +73,7 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
     const pendingCount = songs.filter(s => s.isActiveRepertoire !== false && !s.classifiedAt).length;
 
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -128,7 +131,7 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
 
   if (!currentSong) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
         <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center">
           <h2 className="text-2xl font-bold text-[#00153d] mb-4">Tudo classificado!</h2>
           <p className="text-slate-500 mb-8">Todos os louvores do repertório ativo foram revisados.</p>
@@ -320,12 +323,12 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
         return (
           <div className="space-y-8">
             <h3 className="text-xl font-bold text-[#00153d]">Qual o nível técnico desse louvor para o nosso ministério?</h3>
-            <div className="flex justify-between items-end gap-1">
+            <div className="grid grid-cols-5 md:flex md:justify-between items-end gap-2 md:gap-1">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
                 <button
                   key={level}
                   onClick={() => setTechnicalLevel(level)}
-                  className={`flex-1 h-12 rounded-lg font-bold flex items-center justify-center transition-all ${
+                  className={`w-full md:flex-1 h-12 rounded-lg font-bold flex items-center justify-center transition-all ${
                     technicalLevel === level
                       ? 'bg-blue-600 text-white shadow-lg scale-110'
                       : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
@@ -335,7 +338,7 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
                 </button>
               ))}
             </div>
-            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-2">
               <span>1-2 Muito simples</span>
               <span>9-10 Muito técnico</span>
             </div>
@@ -397,14 +400,14 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
               </div>
             </div>
 
-            <div className="flex gap-4">
-              <button onClick={() => setStep(1)} className="flex-1 py-4 bg-white border border-black/10 text-slate-600 rounded-2xl font-bold hover:bg-slate-50">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button onClick={() => setStep(1)} className="w-full sm:flex-1 py-4 bg-white border border-black/10 text-slate-600 rounded-2xl font-bold hover:bg-slate-50">
                 Editar
               </button>
               <button 
                 onClick={() => void handleSaveAndNext()} 
                 disabled={isSaving}
-                className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full sm:flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isSaving ? 'Salvando...' : 'Salvar e próximo'}
               </button>
@@ -419,19 +422,19 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
   const progressPercent = ((currentIndex) / sortedSongs.length) * 100;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-100">
+    <div className="fixed inset-0 z-[9999] flex flex-col bg-slate-100">
       {/* Header */}
-      <header className="bg-white px-6 py-4 border-b border-black/5 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
+      <header className="bg-white px-4 md:px-6 py-4 border-b border-black/5 flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center gap-2 md:gap-4">
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 shrink-0">
             <X size={24} />
           </button>
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Classificação</p>
-            <h1 className="font-bold text-[#00153d]">Louvor {currentIndex + 1} de {sortedSongs.length}</h1>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">Classificação</p>
+            <h1 className="font-bold text-[#00153d] text-sm md:text-base truncate">Louvor {currentIndex + 1} de {sortedSongs.length}</h1>
           </div>
         </div>
-        <button onClick={handleSkipSong} className="text-sm font-bold text-blue-600 px-4 py-2 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors">
+        <button onClick={handleSkipSong} className="text-sm font-bold text-blue-600 px-3 md:px-4 py-2 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors shrink-0 ml-2">
           Pular
         </button>
       </header>
@@ -446,7 +449,7 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center">
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-12 md:pb-8 flex justify-center">
         <div className="max-w-2xl w-full">
           {/* Song Info */}
           <div className="mb-8 text-center mt-4">
@@ -459,18 +462,18 @@ export function SongClassificationWizard({ songs, onUpdateSong, onClose }: SongC
           </div>
 
           {/* Wizard Card */}
-          <div className="bg-white rounded-[2.5rem] p-6 md:p-10 shadow-xl shadow-blue-900/[0.02] border border-black/5 relative overflow-hidden">
+          <div className="bg-white rounded-[2.5rem] p-6 md:p-10 shadow-xl shadow-blue-900/[0.02] border border-black/5 relative overflow-visible md:overflow-hidden">
             {step > 1 && step < 8 && (
               <button 
                 onClick={handlePrevStep}
-                className="absolute top-6 left-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors"
+                className="absolute top-4 left-4 md:top-6 md:left-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors z-10"
                 title="Voltar"
               >
                 <CornerUpLeft size={20} />
               </button>
             )}
             
-            <div className="mt-4 md:mt-0">
+            <div className="pt-8 md:pt-0 mt-2 md:mt-0">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={step}
@@ -494,15 +497,15 @@ function CardOption({ selected, onClick, title, description }: { selected: boole
   return (
     <button
       onClick={onClick}
-      className={`w-full p-6 rounded-2xl border-2 text-left transition-all ${
+      className={`w-full p-4 md:p-6 rounded-2xl border-2 text-left transition-all ${
         selected
           ? 'border-blue-600 bg-blue-50/50 shadow-md shadow-blue-900/5'
           : 'border-transparent bg-slate-50 hover:bg-slate-100 hover:border-black/5'
       }`}
     >
       <div className="flex items-center justify-between mb-2">
-        <h4 className={`font-bold text-lg ${selected ? 'text-blue-700' : 'text-[#00153d]'}`}>{title}</h4>
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${selected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-transparent'}`}>
+        <h4 className={`font-bold text-lg pr-2 ${selected ? 'text-blue-700' : 'text-[#00153d]'}`}>{title}</h4>
+        <div className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center ${selected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-transparent'}`}>
           <Check size={14} strokeWidth={3} />
         </div>
       </div>

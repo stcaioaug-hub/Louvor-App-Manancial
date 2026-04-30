@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Music, 
   Users, 
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Song, TeamMember, WorshipEvent, RehearsalReport } from '../../types';
+import { useModalViewportLock } from '../../hooks/useModalViewportLock';
 
 interface RehearsalWizardProps {
   isOpen: boolean;
@@ -51,6 +53,8 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const totalSteps = 6;
+
+  useModalViewportLock(isOpen);
 
   const nextStep = () => {
     // Validation for certain steps
@@ -148,8 +152,8 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4">
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -162,22 +166,23 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="relative bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative bg-white w-full max-w-2xl rounded-[2rem] sm:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: 'calc(100dvh - 1.5rem - var(--safe-area-top) - var(--safe-area-bottom))' }}
       >
         {/* Header */}
-        <div className="p-8 pb-4 flex justify-between items-center bg-slate-50/50 border-b border-white">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-[#00153d] rounded-2xl flex items-center justify-center text-white shadow-lg">
-              <Zap size={24} />
+        <div className="p-5 pb-4 sm:p-8 sm:pb-4 flex justify-between items-center bg-slate-50/50 border-b border-white">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-[#00153d] rounded-2xl flex items-center justify-center text-white shadow-lg">
+              <Zap size={22} />
             </div>
-            <div>
-              <h3 className="text-2xl font-headline font-extrabold text-[#00153d] tracking-tight">Relatório de Ensaio</h3>
+            <div className="min-w-0">
+              <h3 className="text-xl sm:text-2xl font-headline font-extrabold text-[#00153d] tracking-tight truncate">Relatório de Ensaio</h3>
               <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
                 {step <= totalSteps ? `Passo ${step} de ${totalSteps}` : 'Finalizado'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all">
+          <button onClick={onClose} className="p-2 sm:p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all shrink-0">
             <X size={24} />
           </button>
         </div>
@@ -193,7 +198,7 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-8 no-scrollbar">
           <AnimatePresence mode="wait">
             {step === 1 && (
               <motion.div 
@@ -522,11 +527,11 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
 
         {/* Footer */}
         {step <= totalSteps && (
-          <div className="p-8 bg-slate-50/50 border-t border-slate-100 flex gap-4">
+          <div className="p-4 sm:p-8 bg-slate-50/50 border-t border-slate-100 flex gap-3 sm:gap-4">
             {step > 1 && (
               <button 
                 onClick={prevStep}
-                className="w-16 flex items-center justify-center p-5 bg-white border border-slate-200 text-slate-400 rounded-[1.5rem] hover:text-[#00153d] hover:border-[#00153d] transition-all active:scale-95 shadow-sm"
+                className="w-14 sm:w-16 flex items-center justify-center p-4 sm:p-5 bg-white border border-slate-200 text-slate-400 rounded-[1.25rem] sm:rounded-[1.5rem] hover:text-[#00153d] hover:border-[#00153d] transition-all active:scale-95 shadow-sm"
               >
                 <ChevronLeft size={20} />
               </button>
@@ -535,7 +540,7 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
             <button
               onClick={step === totalSteps ? handleSubmit : nextStep}
               disabled={isSubmitting || (step === 3 && report.songs_ids?.length === 0)}
-              className="flex-1 p-5 bg-[#00153d] text-white rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-blue-900/20 hover:bg-blue-900 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 group"
+              className="flex-1 p-4 sm:p-5 bg-[#00153d] text-white rounded-[1.25rem] sm:rounded-[1.5rem] text-xs sm:text-sm font-black uppercase tracking-widest shadow-xl shadow-blue-900/20 hover:bg-blue-900 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 group"
             >
               <span>{isSubmitting ? 'Gravando...' : step === totalSteps ? 'Finalizar Agora' : 'Continuar'}</span>
               {!isSubmitting && step < totalSteps && <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" /> }
@@ -545,4 +550,6 @@ export function RehearsalWizard({ isOpen, onClose, songs, team, events, onSubmit
       </motion.div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

@@ -30,6 +30,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WorshipEvent, Song } from '../../types';
 import { BackButton } from '../../components/BackButton';
 import { formatFullDate } from '../../lib/dateUtils';
+import { useModalViewportLock } from '../../hooks/useModalViewportLock';
 import toast from 'react-hot-toast';
 
 interface ScheduleProps {
@@ -112,6 +113,8 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
   });
   const [subType, setSubType] = useState<string>('');
   const [creatingType, setCreatingType] = useState<'skip' | 'confirm' | null>(null);
+
+  useModalViewportLock(showWizard);
   
   const [newEvent, setNewEvent] = useState<Partial<WorshipEvent>>({
     type: 'service',

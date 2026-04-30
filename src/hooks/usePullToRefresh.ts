@@ -17,6 +17,7 @@ interface PullToRefreshState {
 const PULL_THRESHOLD = 84;
 const MAX_PULL_DISTANCE = 118;
 const DONE_RESET_DELAY = 700;
+const REFRESH_TIMEOUT = 12000;
 
 function isMobileViewport() {
   return window.matchMedia('(max-width: 767px)').matches;
@@ -58,20 +59,50 @@ export function usePullToRefresh({
     if (!enabled || !isMobileViewport()) {
       distanceRef.current = 0;
       isTrackingRef.current = false;
+      isRefreshingRef.current = false;
       setState({ distance: 0, status: 'idle' });
       return;
     }
 
     let resetTimer: number | undefined;
+    let isActive = true;
 
-    const resetToIdle = () => {
+    const setPullState = (nextState: PullToRefreshState) => {
+      if (isActive) {
+        setState(nextState);
+      }
+    };
+
+    const clearResetTimer = () => {
       if (resetTimer) {
         window.clearTimeout(resetTimer);
+        resetTimer = undefined;
       }
+    };
+
+    const resetToIdle = () => {
+      clearResetTimer();
       resetTimer = window.setTimeout(() => {
         distanceRef.current = 0;
-        setState({ distance: 0, status: 'idle' });
+        setPullState({ distance: 0, status: 'idle' });
       }, DONE_RESET_DELAY);
+    };
+
+    const runRefresh = () => {
+      let refreshTimer: number | undefined;
+
+      return Promise.race([
+        Promise.resolve().then(() => onRefreshRef.current()),
+        new Promise<void>((_, reject) => {
+          refreshTimer = window.setTimeout(() => {
+            reject(new Error('Tempo de atualização excedido.'));
+          }, REFRESH_TIMEOUT);
+        }),
+      ]).finally(() => {
+        if (refreshTimer) {
+          window.clearTimeout(refreshTimer);
+        }
+      });
     };
 
     const handleTouchStart = (event: TouchEvent) => {
@@ -80,6 +111,7 @@ export function usePullToRefresh({
         return;
       }
 
+      clearResetTimer();
       const touch = event.touches[0];
       startYRef.current = touch.clientY;
       startXRef.current = touch.clientX;
@@ -103,7 +135,7 @@ export function usePullToRefresh({
       if (window.scrollY > 0) {
         isTrackingRef.current = false;
         distanceRef.current = 0;
-        setState({ distance: 0, status: 'idle' });
+        setPullState({ distance: 0, status: 'idle' });
         return;
       }
 
@@ -111,7 +143,7 @@ export function usePullToRefresh({
 
       const easedDistance = Math.min(Math.round(deltaY * 0.55), MAX_PULL_DISTANCE);
       distanceRef.current = easedDistance;
-      setState({
+      setPullState({
         distance: easedDistance,
         status: easedDistance >= PULL_THRESHOLD ? 'ready' : 'pulling',
       });
@@ -126,30 +158,29 @@ export function usePullToRefresh({
 
       if (distanceRef.current < PULL_THRESHOLD) {
         distanceRef.current = 0;
-        setState({ distance: 0, status: 'idle' });
+        setPullState({ distance: 0, status: 'idle' });
         return;
       }
 
       if (!canRefreshRef.current) {
         distanceRef.current = 0;
         onBlockedRefreshRef.current();
-        setState({ distance: 0, status: 'idle' });
+        setPullState({ distance: 0, status: 'idle' });
         return;
       }
 
       distanceRef.current = PULL_THRESHOLD;
       isRefreshingRef.current = true;
-      setState({ distance: PULL_THRESHOLD, status: 'refreshing' });
+      setPullState({ distance: PULL_THRESHOLD, status: 'refreshing' });
 
-      void Promise.resolve()
-        .then(() => onRefreshRef.current())
+      void runRefresh()
         .then(() => {
-          setState({ distance: PULL_THRESHOLD, status: 'done' });
+          setPullState({ distance: PULL_THRESHOLD, status: 'done' });
           resetToIdle();
         })
         .catch(() => {
           distanceRef.current = 0;
-          setState({ distance: 0, status: 'idle' });
+          setPullState({ distance: 0, status: 'idle' });
         })
         .finally(() => {
           isRefreshingRef.current = false;
@@ -160,7 +191,7 @@ export function usePullToRefresh({
       isTrackingRef.current = false;
       if (!isRefreshingRef.current) {
         distanceRef.current = 0;
-        setState({ distance: 0, status: 'idle' });
+        setPullState({ distance: 0, status: 'idle' });
       }
     };
 
@@ -170,9 +201,8 @@ export function usePullToRefresh({
     window.addEventListener('touchcancel', handleTouchCancel);
 
     return () => {
-      if (resetTimer) {
-        window.clearTimeout(resetTimer);
-      }
+      isActive = false;
+      clearResetTimer();
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);

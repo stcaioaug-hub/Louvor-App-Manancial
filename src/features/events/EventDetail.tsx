@@ -1118,7 +1118,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
         </section>
       </div>
 
-      <div className={`fixed bottom-0 ${isSidebarHidden ? 'left-0' : 'md:left-80 left-0'} right-0 p-6 z-[90] pointer-events-none transition-all duration-500`}>
+      <div className={`safe-fixed-bottom fixed bottom-0 ${isSidebarHidden ? 'left-0' : 'md:left-80 left-0'} right-0 z-[90] pointer-events-none transition-all duration-500`}>
         <div className="max-w-4xl mx-auto flex gap-4 pointer-events-auto">
           {!isEditing ? (
             <>

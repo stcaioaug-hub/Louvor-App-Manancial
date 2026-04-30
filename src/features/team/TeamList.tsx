@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Star, Mic2, Guitar, Drum, Piano, Plus, X, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { TeamMember } from '../../types';
 import { BackButton } from '../../components/BackButton';
 
@@ -17,6 +18,7 @@ export default function TeamList({ team, onCreateMember, onUpdateMember, onDelet
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
 
   const categories = [
     { name: 'Vocais', icon: Mic2, gradient: 'from-pink-600 to-rose-400', shadow: 'shadow-pink-500/10' },
@@ -125,7 +127,8 @@ export default function TeamList({ team, onCreateMember, onUpdateMember, onDelet
                   <motion.div
                     layout
                     key={member.id}
-                    className="flex items-center justify-between p-4 bg-white/40 border border-white/60 rounded-2xl group/member hover:bg-white hover:border-blue-500/20 transition-all duration-300"
+                    onClick={() => navigate(`/app/team/${member.id}`)}
+                    className="flex items-center justify-between p-4 bg-white/40 border border-white/60 rounded-2xl group/member hover:bg-white hover:border-blue-500/20 transition-all duration-300 cursor-pointer"
                   >
                     <div className="flex items-center gap-4">
                       <div className="relative">
@@ -151,7 +154,8 @@ export default function TeamList({ team, onCreateMember, onUpdateMember, onDelet
                     {canEdit && (
                       <div className="flex items-center gap-1 opacity-0 group-hover/member:opacity-100 transition-all transform translate-x-2 group-hover/member:translate-x-0">
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setEditingMember(member);
                             setIsAdding(false);
                           }}
@@ -160,7 +164,10 @@ export default function TeamList({ team, onCreateMember, onUpdateMember, onDelet
                           <Edit2 size={16} />
                         </button>
                         <button
-                          onClick={() => void handleDelete(member.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDelete(member.id);
+                          }}
                           className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                         >
                           <Trash2 size={16} />

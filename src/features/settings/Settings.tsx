@@ -41,8 +41,11 @@ export default function Settings({ profile, email, onUpdateProfile, onBack, onSi
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [accountStatus, setAccountStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setName(profile?.name || '');
@@ -54,6 +57,38 @@ export default function Settings({ profile, email, onUpdateProfile, onBack, onSi
   useEffect(() => {
     setAccountEmail(email || '');
   }, [email]);
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !profile) return;
+    
+    setIsUploading(true);
+    setStatus(null);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${profile.id}-${Math.random()}.${fileExt}`;
+      const filePath = `${profile.id}/${fileName}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
+      setAvatarUrl(data.publicUrl);
+      setStatus({ type: 'success', message: 'Foto carregada! Clique em Salvar Alterações para confirmar.' });
+    } catch (error: any) {
+      setStatus({ type: 'error', message: error.message || 'Erro ao fazer upload da foto.' });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,7 +198,10 @@ export default function Settings({ profile, email, onUpdateProfile, onBack, onSi
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-[2.5rem] p-8 md:p-10 apple-shadow border border-white mt-12">
             <div className="relative -mt-16 mb-8 flex flex-col items-center">
-              <div className="relative group">
+              <div 
+                className={`relative group cursor-pointer ${isUploading ? 'opacity-50' : ''}`}
+                onClick={handleAvatarClick}
+              >
                 <div className="w-32 h-32 rounded-[2.5rem] overflow-hidden border-4 border-white apple-shadow-lg bg-blue-50 relative">
                   <img 
                     src={avatarUrl || "https://ugc.production.linktr.ee/d6970972-5f9a-4f2d-8125-7a8cf7df28cc_IMG-0954.jpeg?io=true&size=avatar-v3_0"} 
@@ -175,9 +213,16 @@ export default function Settings({ profile, email, onUpdateProfile, onBack, onSi
                   </div>
                 </div>
                 <div className="absolute -bottom-2 -right-2 w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center border-4 border-white shadow-lg group-hover:scale-110 transition-transform">
-                  <Camera size={18} />
+                  {isUploading ? <LoaderCircle size={18} className="animate-spin" /> : <Camera size={18} />}
                 </div>
               </div>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                accept="image/*" 
+                className="hidden" 
+              />
               <div className="mt-4 text-center">
                 <h3 className="text-2xl font-headline font-bold text-[#00153d]">{name || 'Seu Nome'}</h3>
                 <p className="text-blue-600 font-bold text-xs uppercase tracking-[0.2em]">{profile?.role === 'minister' ? 'Ministro de Louvor' : 'Músico'}</p>
