@@ -282,10 +282,12 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
   };
 
   // Logic for study list
-  const songsToStudy = userSongStudy.map(study => {
-    const song = songs.find(s => s.id === study.song_id);
-    return song ? { ...song, studyId: study.id, isCompleted: study.is_completed } : null;
-  }).filter((s): s is (Song & { studyId: string, isCompleted: boolean }) => s !== null);
+  const songsToStudy = userSongStudy
+    .filter(study => study.user_id === userProfile?.id)
+    .map(study => {
+      const song = songs.find(s => s.id === study.song_id);
+      return song ? { ...song, studyId: study.id, isCompleted: study.is_completed } : null;
+    }).filter((s): s is (Song & { studyId: string, isCompleted: boolean }) => s !== null);
 
   const upcomingEventSongs = events
     .filter(e => new Date(e.date + 'T' + e.time) >= new Date())
@@ -293,7 +295,7 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
     .slice(0, 3)
     .flatMap(e => e.songs.map(songId => ({ songId, eventTitle: e.title, eventDate: e.date })));
 
-  const isStudying = (songId: string) => userSongStudy.some(s => s.song_id === songId);
+  const isStudying = (songId: string) => userSongStudy.some(s => s.song_id === songId && s.user_id === userProfile?.id);
 
   return (
     <div className="space-y-12">

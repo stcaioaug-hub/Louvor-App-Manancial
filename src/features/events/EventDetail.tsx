@@ -141,7 +141,32 @@ function serializeEditableEvent(event: WorshipEvent) {
 }
 
 function hasEventChanges(original: WorshipEvent, draft: WorshipEvent) {
-  return serializeEditableEvent(original) !== serializeEditableEvent(draft);
+  if (!original || !draft) return false;
+  
+  // Use a more robust comparison for the important fields
+  const fields = ['date', 'time', 'title', 'type', 'location', 'description'] as const;
+  for (const field of fields) {
+    if (original[field] !== draft[field]) return true;
+  }
+
+  // Deep compare arrays and objects
+  if (!deepEqual(original.songs || [], draft.songs || [])) return true;
+  if (!deepEqual(original.offeringSongs || [], draft.offeringSongs || [])) return true;
+  if (!deepEqual(original.outroSongs || [], draft.outroSongs || [])) return true;
+  if (!deepEqual(original.team || {}, draft.team || {})) return true;
+  if (!deepEqual(original.attendance || {}, draft.attendance || {})) return true;
+  if (!deepEqual(original.songVocals || {}, draft.songVocals || {})) return true;
+
+  return false;
+}
+
+function deepEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return false;
+  const keysA = Object.keys(a).sort();
+  const keysB = Object.keys(b).sort();
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((key, i) => key === keysB[i] && deepEqual(a[key], b[key]));
 }
 
 function DroppableZone({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
@@ -413,22 +438,33 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
 
   useEffect(() => {
     const nextSyncedEvent = cloneEditableEvent(event);
+    
+    // Always update the ref to the latest server state
+    const previousSyncedEvent = lastSyncedEventRef.current;
+    lastSyncedEventRef.current = nextSyncedEvent;
 
     setEditedEvent((currentDraft) => {
-      const previousSyncedEvent = lastSyncedEventRef.current;
       const switchedEvent = currentDraft.id !== nextSyncedEvent.id || previousSyncedEvent.id !== nextSyncedEvent.id;
-      const draftHasLocalChanges = hasEventChanges(previousSyncedEvent, currentDraft);
-
-      lastSyncedEventRef.current = nextSyncedEvent;
-
+      
+      // If we switched to a different event, reset the draft immediately
       if (switchedEvent) {
         return nextSyncedEvent;
       }
 
-      if (isEditing || isSaving || draftHasLocalChanges) {
+      // If we are currently editing or saving, keep the current draft to avoid overwriting user work
+      if (isEditing || isSaving) {
         return currentDraft;
       }
 
+      // If the sync is exactly what we have in the draft (semantically), 
+      // or if we have local changes we haven't saved yet, keep the draft.
+      // This prevents "flickers" when a background sync happens right after a save.
+      const draftHasLocalChanges = hasEventChanges(nextSyncedEvent, currentDraft);
+      if (draftHasLocalChanges) {
+        return currentDraft;
+      }
+
+      // Otherwise, adopt the new synced event
       return nextSyncedEvent;
     });
   }, [event, isEditing, isSaving]);

@@ -359,36 +359,34 @@ function mapEventToRow(event: WorshipEvent) {
 }
 
 function buildEventSongsPayload(event: WorshipEvent) {
-  const mainSongs = event.songs.map((songId, index) => ({
+  const mainSongs = (event.songs ?? []).map((songId, index) => ({
     event_id: event.id,
     song_id: songId,
+    position: index,
     is_outro: false,
     is_offering: false,
-    position: index,
+    lead_vocal: event.songVocals?.[songId] || null
   }));
 
   const offeringSongs = (event.offeringSongs ?? []).map((songId, index) => ({
     event_id: event.id,
     song_id: songId,
+    position: mainSongs.length + index,
     is_outro: false,
     is_offering: true,
-    position: mainSongs.length + index,
+    lead_vocal: event.songVocals?.[songId] || null
   }));
 
   const outroSongs = (event.outroSongs ?? []).map((songId, index) => ({
     event_id: event.id,
     song_id: songId,
+    position: mainSongs.length + offeringSongs.length + index,
     is_outro: true,
     is_offering: false,
-    position: index,
-    lead_vocal: event.songVocals?.[songId] || null,
+    lead_vocal: event.songVocals?.[songId] || null
   }));
 
-  return [
-    ...mainSongs.map(s => ({ ...s, lead_vocal: event.songVocals?.[s.song_id] || null })),
-    ...offeringSongs.map(s => ({ ...s, lead_vocal: event.songVocals?.[s.song_id] || null })),
-    ...outroSongs
-  ];
+  return [...mainSongs, ...offeringSongs, ...outroSongs];
 }
 
 function createInitialLocalData(): AppData {
@@ -802,7 +800,7 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
     const payload = buildEventSongsPayload(event);
     
     const normalizeSongs = (songs: any[]) => {
-      return songs.map(s => ({
+      return (songs || []).map(s => ({
         song_id: s.song_id,
         is_outro: !!s.is_outro,
         is_offering: !!s.is_offering,
@@ -823,6 +821,8 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
 
     if (hasChanged) {
       console.log('Supabase: Updating event songs (setlist changed)', event.id);
+      // Delete existing and insert new
+      // Note: We use withTimeout to ensure we don't hang, but these should ideally be atomic
       const deleteResult = await withTimeout(
         supabase.from('event_songs').delete().eq('event_id', event.id)
       );
@@ -837,20 +837,15 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
     }
   }
 
+  // Return a clean object with consistent arrays
   return {
-    id: event.id,
-    date: event.date,
-    time: normalizeTime(event.time),
-    title: event.title,
-    type: event.type,
-    location: event.location,
-    description: event.description,
-    songs: [...event.songs],
-    offeringSongs: [...(event.offeringSongs ?? [])],
-    outroSongs: [...(event.outroSongs ?? [])],
+    ...event,
+    songs: [...(event.songs || [])],
+    offeringSongs: [...(event.offeringSongs || [])],
+    outroSongs: [...(event.outroSongs || [])],
     team: normalizeTeam(event.team),
     attendance: normalizeAttendance(event.attendance),
-    songVocals: event.songVocals ? { ...event.songVocals } : undefined,
+    songVocals: event.songVocals ? { ...event.songVocals } : {},
   };
 }
 

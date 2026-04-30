@@ -401,7 +401,7 @@ export default function App() {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         void loadData();
-      }, 1000); // 1 second debounce to avoid flooding
+      }, 2000); // 2 second debounce to ensure DB operations (like delete-insert) complete
     });
 
     return () => {
@@ -576,7 +576,8 @@ export default function App() {
     try {
       if (!user) return;
       await toggleStudySong(user.id, songId);
-      // Data will refresh via subscription
+      // Trigger a quick reload for immediate feedback
+      void loadData();
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     }
@@ -585,7 +586,8 @@ export default function App() {
   const handleUpdateStudyStatus = async (studyId: string, isCompleted: boolean) => {
     try {
       await updateStudySongStatus(studyId, isCompleted);
-      // Data will refresh via subscription
+      // Trigger a quick reload for immediate feedback
+      void loadData();
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     }
