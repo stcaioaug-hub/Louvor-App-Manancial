@@ -368,15 +368,19 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
 
   const allConfirmed = scaledMembers.length > 0 && scaledMembers.every((member) => editedEvent.attendance?.[member]);
 
+  const hasUnsavedChanges = useMemo(() => {
+    if (!event || !editedEvent) return false;
+    
+    if (JSON.stringify(event.songs || []) !== JSON.stringify(editedEvent.songs || [])) return true;
+    if (JSON.stringify(event.offeringSongs || []) !== JSON.stringify(editedEvent.offeringSongs || [])) return true;
+    if (JSON.stringify(event.outroSongs || []) !== JSON.stringify(editedEvent.outroSongs || [])) return true;
+    if (JSON.stringify(event.songVocals || {}) !== JSON.stringify(editedEvent.songVocals || {})) return true;
+    
+    return false;
+  }, [event, editedEvent]);
+
   const handleQuickSave = async (newEvent: WorshipEvent) => {
     setEditedEvent(newEvent);
-    if (!isEditing) {
-      try {
-        await onUpdate(newEvent);
-      } catch (error) {
-        console.error("Failed to update event", error);
-      }
-    }
   };
 
   const findContainer = (id: string) => {
@@ -1019,21 +1023,44 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
         <div className="max-w-4xl mx-auto flex gap-4 pointer-events-auto">
           {!isEditing ? (
             <>
-              <button
-                onClick={() => setShowMyAttendanceReview(true)}
-                className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-[#00153d] text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all active:scale-95"
-              >
-                <CheckCircle2 size={20} />
-                <span>Confirmar Presença</span>
-              </button>
-              {canEdit && (
+              {!hasUnsavedChanges && (
                 <button
-                  onClick={() => setIsEditing(true)}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-white text-[#00153d] rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all active:scale-95 border border-black/5"
+                  onClick={() => setShowMyAttendanceReview(true)}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-[#00153d] text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all active:scale-95"
                 >
-                  <Edit2 size={20} />
-                  <span>Editar Detalhes</span>
+                  <CheckCircle2 size={20} />
+                  <span>Confirmar Presença</span>
                 </button>
+              )}
+              
+              {hasUnsavedChanges ? (
+                <>
+                  <button
+                    onClick={() => setEditedEvent(event)}
+                    disabled={isSaving}
+                    className="flex-1 px-6 py-4 bg-white text-slate-500 rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all disabled:opacity-50 active:scale-95 border border-black/5"
+                  >
+                    Descartar
+                  </button>
+                  <button
+                    onClick={() => void handleSave()}
+                    disabled={isSaving}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all disabled:opacity-50 active:scale-95"
+                  >
+                    {isSaving ? <LoaderCircle size={20} className="animate-spin" /> : <Save size={20} />}
+                    <span>{isSaving ? 'Salvando...' : 'Salvar Alterações'}</span>
+                  </button>
+                </>
+              ) : (
+                canEdit && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-white text-[#00153d] rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all active:scale-95 border border-black/5"
+                  >
+                    <Edit2 size={20} />
+                    <span>Editar Detalhes</span>
+                  </button>
+                )
               )}
             </>
           ) : (

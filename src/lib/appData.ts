@@ -791,30 +791,47 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
   // Optimization: Only update event_songs if they might have changed
   // This is important because musicians can update attendance but might not have full permissions for event_songs management
   // We'll fetch existing songs to compare
-  const { data: existingSongs, error: fetchError } = await supabase
-    .from('event_songs')
-    .select('song_id, is_outro, is_offering, position')
-    .eq('event_id', event.id);
+  const { data: existingSongs, error: fetchError } = await withTimeout(
+    supabase
+      .from('event_songs')
+      .select('song_id, is_outro, is_offering, position, lead_vocal')
+      .eq('event_id', event.id)
+  );
 
   if (!fetchError && existingSongs) {
     const payload = buildEventSongsPayload(event);
     
-    // Compare existing with new payload
-    const hasChanged = payload.length !== existingSongs.length || 
-      payload.some((p, i) => 
-        p.song_id !== existingSongs[i].song_id || 
-        p.is_outro !== existingSongs[i].is_outro || 
-        p.is_offering !== existingSongs[i].is_offering ||
-        p.position !== existingSongs[i].position
-      );
+    const normalizeSongs = (songs: any[]) => {
+      return songs.map(s => ({
+        song_id: s.song_id,
+        is_outro: !!s.is_outro,
+        is_offering: !!s.is_offering,
+        position: s.position,
+        lead_vocal: s.lead_vocal || null
+      })).sort((a, b) => {
+        if (a.is_outro !== b.is_outro) return a.is_outro ? 1 : -1;
+        if (a.is_offering !== b.is_offering) return a.is_offering ? 1 : -1;
+        if (a.position !== b.position) return a.position - b.position;
+        return String(a.song_id).localeCompare(String(b.song_id));
+      });
+    };
+
+    const normPayload = normalizeSongs(payload);
+    const normExisting = normalizeSongs(existingSongs);
+
+    const hasChanged = JSON.stringify(normPayload) !== JSON.stringify(normExisting);
 
     if (hasChanged) {
       console.log('Supabase: Updating event songs (setlist changed)', event.id);
-      const deleteResult = await supabase.from('event_songs').delete().eq('event_id', event.id);
+      const deleteResult = await withTimeout(
+        supabase.from('event_songs').delete().eq('event_id', event.id)
+      );
       assertNoError(deleteResult.error);
 
       if (payload.length > 0) {
-        const insertResult = await supabase.from('event_songs').insert(payload);
+        const insertResult = await withTimeout(
+          supabase.from('event_songs').insert(payload)
+        );
         assertNoError(insertResult.error);
       }
     }
@@ -833,6 +850,7 @@ export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {
     outroSongs: [...(event.outroSongs ?? [])],
     team: normalizeTeam(event.team),
     attendance: normalizeAttendance(event.attendance),
+    songVocals: event.songVocals ? { ...event.songVocals } : undefined,
   };
 }
 
