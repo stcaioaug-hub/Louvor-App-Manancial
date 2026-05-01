@@ -765,6 +765,11 @@ export async function deleteEvent(id: string): Promise<void> {
   const junctionResult = await withTimeout(supabase.from('event_songs').delete().eq('event_id', id));
   assertNoError(junctionResult.error);
 
+  const reportsResult = await withTimeout(supabase.from('rehearsal_reports').update({ event_id: null }).eq('event_id', id));
+  if (reportsResult.error) {
+    console.warn('Failed to clear event_id from rehearsal reports', reportsResult.error);
+  }
+
   const result = await withTimeout(supabase.from('worship_events').delete().eq('id', id));
   assertNoError(result.error);
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ChevronLeft,
   Music,
@@ -13,11 +13,13 @@ import {
   Zap,
   TrendingUp,
   Mic2,
+  Edit2,
 } from 'lucide-react';
-import { motion, useScroll, useTransform } from 'motion/react';
+import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { BackButton } from '../../components/BackButton';
 import { Song, WorshipEvent } from '../../types';
 import { formatFullDate, parseLocalDate } from '../../lib/dateUtils';
+import { SongEditorModal } from './SongEditorModal';
 
 interface SongDetailProps {
   song: Song;
@@ -32,6 +34,8 @@ export default function SongDetail({ song, events, onBack, onUpdateSong, canEdit
   const backgroundY = useTransform(scrollY, [0, 500], [0, 150]);
   const backgroundOpacity = useTransform(scrollY, [0, 300], [0.15, 0]);
   const contentY = useTransform(scrollY, [0, 500], [0, -20]);
+  
+  const [isEditing, setIsEditing] = useState(false);
 
   const songHistory = events
     .filter((event) => event.songs.includes(song.id) || (event.outroSongs || []).includes(song.id))
@@ -73,6 +77,15 @@ export default function SongDetail({ song, events, onBack, onUpdateSong, canEdit
           <BackButton onClick={onBack} />
 
           <div className="flex gap-2">
+            {canEdit && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="p-2 bg-white/80 backdrop-blur-md text-slate-500 rounded-xl apple-shadow hover:scale-110 hover:text-blue-600 transition-all border border-white/50"
+                title="Editar"
+              >
+                <Edit2 size={20} />
+              </button>
+            )}
             {song.links.chords && (
               <a
                 href={song.links.chords}
@@ -360,6 +373,20 @@ export default function SongDetail({ song, events, onBack, onUpdateSong, canEdit
           </div>
         </motion.div>
       </div>
+
+      <AnimatePresence>
+        {isEditing && (
+          <SongEditorModal
+            mode="edit"
+            song={song}
+            onClose={() => setIsEditing(false)}
+            onSave={async (updatedSong) => {
+              await onUpdateSong(updatedSong);
+              setIsEditing(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

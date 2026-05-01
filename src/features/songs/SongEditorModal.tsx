@@ -257,6 +257,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
     try {
       setIsSubmitting(true);
       await withTimeout(onSave(cleanedSong), SAVE_TIMEOUT_MS);
+      toast.success(mode === 'create' ? 'Louvor adicionado com sucesso!' : 'Louvor salvo com sucesso!');
       onClose();
     } catch (error) {
       console.error(error);
@@ -286,23 +287,23 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden apple-shadow"
+        className="bg-white rounded-[2rem] md:rounded-[2.5rem] w-full max-w-lg overflow-hidden apple-shadow flex flex-col max-h-[90vh]"
       >
-        <div className="p-8 border-b border-black/5 flex justify-between items-center bg-slate-50/50">
+        <div className="flex-none p-6 md:p-8 border-b border-black/5 flex justify-between items-center bg-slate-50/50">
           <div>
-            <h3 className="text-2xl font-bold text-[#00153d]">
+            <h3 className="text-xl md:text-2xl font-bold text-[#00153d]">
               {mode === 'create' ? 'Adicionar Louvor' : 'Editar Louvor'}
             </h3>
-            <p className="text-xs text-slate-400 font-medium mt-1">Preencha os detalhes do repertório.</p>
+            <p className="text-[10px] md:text-xs text-slate-400 font-medium mt-1">Preencha os detalhes do repertório.</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-            <X size={24} />
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors shrink-0 ml-4">
+            <X size={20} className="md:w-6 md:h-6" />
           </button>
         </div>
 
-        <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+        <div className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto custom-scrollbar">
           <div className="space-y-4">
-            <div className="flex items-end gap-3 relative">
+            <div className="flex items-end gap-3 relative z-50">
               <div className="flex-1 space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                   Título do Louvor
@@ -430,7 +431,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Tom da Banda</label>
                 <div className="flex items-center gap-2">
@@ -505,7 +506,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                   BPM
@@ -539,7 +540,7 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1">
                   Proficiência Requerida
@@ -681,11 +682,11 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
           </div>
         </div>
 
-        <div className="p-8 bg-slate-50 flex flex-wrap gap-4">
+        <div className="flex-none p-5 md:p-8 bg-slate-50 border-t border-black/5 flex items-center gap-2 md:gap-4">
           <button
             onClick={onClose}
             disabled={isSubmitting}
-            className="flex-1 min-w-[120px] py-4 bg-white border border-black/5 rounded-2xl font-bold text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-50"
+            className="flex-1 py-3 md:py-4 bg-white border border-black/5 rounded-xl md:rounded-2xl font-bold text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-50 text-sm md:text-base"
           >
             Cancelar
           </button>
@@ -693,20 +694,19 @@ export const SongEditorModal = ({ mode, song, onClose, onSave, onDelete }: SongE
             <button
               onClick={() => setShowConfirmDelete(true)}
               disabled={isSubmitting}
-              className="px-6 py-4 bg-red-50 text-red-600 rounded-2xl font-bold hover:bg-red-100 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="p-3 md:p-4 bg-red-50 text-red-600 rounded-xl md:rounded-2xl font-bold hover:bg-red-100 transition-all disabled:opacity-50 flex items-center justify-center shrink-0"
               title="Excluir Louvor"
             >
-              <Trash2 size={18} />
-              <span className="hidden sm:inline">Excluir</span>
+              <Trash2 size={20} />
             </button>
           )}
           <button
             onClick={() => void handleSave()}
             disabled={isSubmitting || isEnriching}
-            className="flex-[2] min-w-[160px] py-4 bg-[#00153d] text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 hover:opacity-90 transition-all disabled:opacity-50"
+            className="flex-[2] py-3 md:py-4 bg-[#00153d] text-white rounded-xl md:rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 hover:opacity-90 transition-all disabled:opacity-50 text-sm md:text-base"
           >
-            <Save size={18} />
-            {isSubmitting ? 'Salvando...' : mode === 'create' ? 'Adicionar Louvor' : 'Salvar Alterações'}
+            <Save size={18} className="hidden sm:block" />
+            <span>{isSubmitting ? 'Salvando...' : mode === 'create' ? 'Adicionar' : 'Salvar'}</span>
           </button>
         </div>
       </motion.div>

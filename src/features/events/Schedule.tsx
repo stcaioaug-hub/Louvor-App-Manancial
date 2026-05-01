@@ -41,6 +41,7 @@ interface ScheduleProps {
   onUpdateEvent?: (event: WorshipEvent) => Promise<void>;
   onDeleteEvent?: (id: string) => Promise<void>;
   canEdit?: boolean;
+  canDeleteEvent?: boolean;
   onBack?: () => void;
 }
 
@@ -82,7 +83,7 @@ function mergeEventEdit(original: WorshipEvent, edit: Partial<WorshipEvent>): Wo
   };
 }
 
-export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, onUpdateEvent, onDeleteEvent, canEdit, onBack }: ScheduleProps) {
+export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, onUpdateEvent, onDeleteEvent, canEdit, canDeleteEvent, onBack }: ScheduleProps) {
   const [view, setView] = useState<'list' | 'calendar'>('calendar');
   const [showWizard, setShowWizard] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -668,7 +669,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                                 <Edit2 size={16} />
                               </button>
                             )}
-                            {canEdit && (
+                            {canDeleteEvent && (
                               <button 
                                 onClick={(e) => handleDeleteClick(event, e)}
                                 className="p-2 mr-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
@@ -716,7 +717,7 @@ export default function Schedule({ events, songs, onSelectEvent, onCreateEvent, 
                       <Clock size={14} />
                       <span className="text-xs font-bold">{event.time}</span>
                     </div>
-                    {canEdit && (
+                    {canDeleteEvent && (
                       <button 
                         onClick={(e) => handleDeleteClick(event, e)}
                         className="p-2 text-slate-300 hover:text-red-500 active:bg-red-50 rounded-lg transition-all"

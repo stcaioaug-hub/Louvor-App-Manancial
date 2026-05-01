@@ -348,45 +348,13 @@ function SortableSongItem({
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-end gap-1">
-            {assignedVocal && (
-              <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-[9px] font-bold border border-blue-100">
-                <Mic size={10} />
-                <span>{assignedVocal}</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1 md:gap-2">
-            {song.links.chords && (
-              <a
-                href={song.links.chords}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Cifra"
-                className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all"
-              >
-                <Music size={12} />
-                <span className="hidden lg:inline">Cifra</span>
-              </a>
-            )}
-            {song.links.lyrics && (
-              <a
-                href={song.links.lyrics}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Letra"
-                className="flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-all"
-              >
-                <FileText size={12} />
-                <span className="hidden lg:inline">Letra</span>
-              </a>
-            )}
+          <div className="flex items-center gap-1 md:gap-2">
             <button 
               className="p-1.5 text-slate-300 group-hover:text-blue-400 transition-colors"
               title="Expandir detalhes"
             >
               <Eye size={16} />
             </button>
-            </div>
           </div>
         )}
       </div>
@@ -1203,38 +1171,41 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="bg-white rounded-[3rem] w-full max-w-lg overflow-hidden apple-shadow relative"
+                className="bg-white rounded-[2rem] md:rounded-[3rem] w-full max-w-lg overflow-hidden apple-shadow relative flex flex-col max-h-[90vh]"
               >
-                <button 
-                  onClick={() => setExpandedSongId(null)}
-                  className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors z-10"
-                >
-                  <X size={20} />
-                </button>
-
-                <div className="p-10 space-y-8">
-                  <div className="space-y-2">
+                {/* Fixed Header with Close Button */}
+                <div className="flex-none p-6 md:p-8 flex justify-between items-start bg-white z-10">
+                  <div className="space-y-1 pr-12">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">Detalhes do Louvor</p>
-                    <h3 className="text-3xl font-headline font-extrabold text-[#00153d] leading-tight">{song.title}</h3>
-                    <p className="text-slate-500 font-medium">{song.artist}</p>
+                    <h3 className="text-2xl md:text-3xl font-headline font-extrabold text-[#00153d] leading-tight break-words">{song.title}</h3>
+                    <p className="text-sm md:text-base text-slate-500 font-medium">{song.artist}</p>
                   </div>
+                  <button 
+                    onClick={() => setExpandedSongId(null)}
+                    className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors z-20"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="p-6 bg-blue-50 rounded-[2rem] space-y-1">
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto px-6 md:px-8 pb-6 md:pb-8 space-y-6 md:space-y-8">
+                  <div className="grid grid-cols-2 gap-3 md:gap-4">
+                    <div className="p-5 md:p-6 bg-blue-50 rounded-[1.5rem] md:rounded-[2rem] space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Tom Principal</p>
-                      <p className="text-3xl font-headline font-black text-blue-700">{song.key}</p>
+                      <p className="text-2xl md:text-3xl font-headline font-black text-blue-700">{song.key}</p>
                     </div>
-                    <div className="p-6 bg-slate-50 rounded-[2rem] space-y-1">
+                    <div className="p-5 md:p-6 bg-slate-50 rounded-[1.5rem] md:rounded-[2rem] space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vocal Principal</p>
                       <div className="flex items-center gap-2 pt-1">
-                        <Mic size={16} className="text-slate-400" />
-                        <p className="text-lg font-bold text-[#00153d] truncate">{leadVocal}</p>
+                        <Mic size={14} className="text-slate-400 shrink-0" />
+                        <p className="text-sm md:text-lg font-bold text-[#00153d] truncate">{leadVocal}</p>
                       </div>
                     </div>
                     {song.technicalLevel && (
-                      <div className="p-6 bg-amber-50 rounded-[2rem] space-y-1 col-span-2 md:col-span-1">
+                      <div className="p-5 md:p-6 bg-amber-50 rounded-[1.5rem] md:rounded-[2rem] space-y-1 col-span-2">
                         <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Nível Técnico</p>
-                        <p className="text-3xl font-headline font-black text-amber-600">{song.technicalLevel}<span className="text-xs text-amber-400/60 font-bold ml-1">/10</span></p>
+                        <p className="text-2xl md:text-3xl font-headline font-black text-amber-600">{song.technicalLevel}<span className="text-xs text-amber-400/60 font-bold ml-1">/10</span></p>
                       </div>
                     )}
                   </div>
@@ -1245,13 +1216,13 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                         href={song.links.chords}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full flex items-center justify-between p-6 bg-[#00153d] text-white rounded-[2rem] font-bold hover:opacity-90 transition-all group scale-active"
+                        className="w-full flex items-center justify-between p-5 md:p-6 bg-[#00153d] text-white rounded-[1.5rem] md:rounded-[2rem] font-bold hover:opacity-90 transition-all group scale-active"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
-                            <Music size={20} />
+                        <div className="flex items-center gap-3 md:gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center shrink-0">
+                            <Music size={18} />
                           </div>
-                          <span>Acessar Cifra Club</span>
+                          <span className="text-sm md:text-base">Acessar Cifra Club</span>
                         </div>
                         <ExternalLink size={18} className="opacity-40 group-hover:opacity-100 transition-opacity" />
                       </a>
@@ -1261,13 +1232,13 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                         href={song.links.lyrics}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full flex items-center justify-between p-6 bg-emerald-600 text-white rounded-[2rem] font-bold hover:opacity-90 transition-all group scale-active"
+                        className="w-full flex items-center justify-between p-5 md:p-6 bg-emerald-600 text-white rounded-[1.5rem] md:rounded-[2rem] font-bold hover:opacity-90 transition-all group scale-active"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
-                            <FileText size={20} />
+                        <div className="flex items-center gap-3 md:gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center shrink-0">
+                            <FileText size={18} />
                           </div>
-                          <span>Ver Letra Completa</span>
+                          <span className="text-sm md:text-base">Ver Letra Completa</span>
                         </div>
                         <ExternalLink size={18} className="opacity-40 group-hover:opacity-100 transition-opacity" />
                       </a>
@@ -1275,10 +1246,11 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                   </div>
                 </div>
 
-                <div className="p-8 bg-slate-50 flex justify-center">
+                {/* Fixed Footer */}
+                <div className="flex-none p-6 md:p-8 bg-slate-50 border-t border-black/5 flex justify-center">
                    <button
                     onClick={() => setExpandedSongId(null)}
-                    className="px-12 py-4 bg-white text-[#00153d] rounded-2xl font-bold apple-shadow hover:bg-slate-100 transition-all"
+                    className="w-full md:w-auto px-12 py-4 bg-white text-[#00153d] rounded-[1.5rem] font-bold apple-shadow hover:bg-slate-100 transition-all"
                   >
                     Fechar
                   </button>

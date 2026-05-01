@@ -52,7 +52,7 @@ Pesquise especificamente:
 - Letras.mus.br: site:letras.mus.br "{TITLE}" "{ARTIST}".
 
 Retorne EXATAMENTE um objeto JSON com o seguinte formato:
-{{
+{
   "title": "Título oficial da música",
   "artist": "Artista/Banda oficial",
   "key": "Tom original (Ex: C, G, Am, F#m)",
@@ -62,7 +62,7 @@ Retorne EXATAMENTE um objeto JSON com o seguinte formato:
   "chords_url": "Link da cifra no CifraClub (prioritário) ou cifra.com.br",
   "lyrics_url": "Link da letra no Letras.mus.br (prioritário) ou letras.com.br",
   "cover_url": "Link da imagem da capa do álbum ou single (URL pública e direta)"
-}}
+}
 
 Importante:
 - Se não encontrar um link específico, deixe o campo como null.
@@ -494,11 +494,11 @@ Retorne uma lista de até 8 possíveis matches (os mais famosos primeiro).
 
 Retorne EXATAMENTE um array JSON com objetos no formato:
 [
-  {{
+  {
     "title": "Título Correto",
     "artist": "Nome do Artista/Ministério",
     "cover_url": "URL da capa do álbum (se encontrar)"
-  }}
+  }
 ]
 
 Importante:
@@ -511,24 +511,31 @@ export async function searchSongs(query: string): Promise<SongSuggestionResult[]
 
   try {
     const prompt = SEARCH_PROMPT_TEMPLATE.replace('{QUERY}', query);
-    const appleSuggestions = await searchAppleMusicSuggestions(query);
-
+    const applePromise = searchAppleMusicSuggestions(query).catch(() => []);
+    
     const cachedSuggestions = Object.values(getSongIndex().enriched)
       .filter((song) => `${song.title} ${song.artist}`.toLowerCase().includes(query.toLowerCase()))
       .map((song) => ({ title: song.title, artist: song.artist, cover_url: song.cover_url }))
       .slice(0, 8);
 
+    const appleSuggestions = await applePromise;
+
     if (!genai) return mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions]);
 
-    const aiRaw =
-      parseJson<unknown>(await generateJson(prompt, true)) ??
-      parseJson<unknown>(await generateJson(prompt, false));
+    let aiRaw = null;
+    try {
+      aiRaw = parseJson<unknown>(await generateJson(prompt, true)) ??
+              parseJson<unknown>(await generateJson(prompt, false));
+    } catch (aiError) {
+      console.warn('Gemini falhou na busca, usando Apple Music:', aiError);
+    }
+
     if (!aiRaw) return mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions]);
 
     const aiSuggestions = normalizeSongSuggestions(aiRaw);
     return mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions, ...aiSuggestions]);
   } catch (error) {
-    console.error('Erro ao buscar sugestões no Gemini:', error);
+    console.error('Erro crítico ao buscar sugestões:', error);
     return [];
   }
 }

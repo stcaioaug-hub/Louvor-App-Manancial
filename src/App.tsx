@@ -628,6 +628,7 @@ export default function App() {
 
   const effectiveProfile = profile ?? (isLocalMode ? localProfile : null);
   const isMinister = isLocalMode || effectiveProfile?.role === 'minister' || effectiveProfile?.role === 'pastor';
+  const canDeleteEvent = isLocalMode || ['Caio', 'Silvia', 'Pastor Sidney'].includes(effectiveProfile?.name || '');
 
   const renderContent = () => {
     return (
@@ -690,6 +691,7 @@ export default function App() {
             onUpdateEvent={handleUpdateEvent}
             onDeleteEvent={handleDeleteEvent}
             canEdit={isMinister}
+            canDeleteEvent={canDeleteEvent}
             onBack={() => navigate('/app/dashboard')}
           />
         } />
