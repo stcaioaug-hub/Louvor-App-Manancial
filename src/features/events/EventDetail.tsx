@@ -24,6 +24,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { formatFullDate, isPastEvent } from '../../lib/dateUtils';
 import { BackButton } from '../../components/BackButton';
+import { QuickSongCreateWizard } from './QuickSongCreateWizard';
 import {
   DndContext,
   closestCenter,
@@ -55,11 +56,13 @@ interface EventDetailProps {
   onBack: () => void;
   onUpdate: (updatedEvent: WorshipEvent) => Promise<void>;
   onUpdateSong: (updatedSong: Song) => Promise<void>;
+  onCreateSong: (song: Omit<Song, 'id'>) => Promise<Song>;
   onSelectSong: (id: string) => void;
   onSelectEvent: (id: string) => void;
-  onDeleteEvent?: () => void;
+  onDeleteEvent?: () => Promise<void>;
   events: WorshipEvent[];
   canEdit?: boolean;
+  canDeleteEvent?: boolean;
   userProfile?: Profile | null;
   isSidebarHidden?: boolean;
   userSongStudy?: UserSongStudy[];
@@ -363,7 +366,7 @@ function SortableSongItem({
 );
 }
 
-export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, userProfile, isSidebarHidden = false, userSongStudy = [], onToggleStudySong, onRefreshBlockChange }: EventDetailProps) {
+export default function EventDetail({ event, events, songs, team, onBack, onUpdate, onUpdateSong, onCreateSong, onSelectSong, onSelectEvent, onDeleteEvent, canEdit = false, canDeleteEvent = false, userProfile, isSidebarHidden = false, userSongStudy = [], onToggleStudySong, onRefreshBlockChange }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const lastSyncedEventRef = useRef<WorshipEvent>(cloneEditableEvent(event));
   const [editedEvent, setEditedEvent] = useState<WorshipEvent>(() => cloneEditableEvent(event));
@@ -374,7 +377,11 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showMyAttendanceReview, setShowMyAttendanceReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [songSearchQuery, setSongSearchQuery] = useState('');
+  const [showQuickCreateWizard, setShowQuickCreateWizard] = useState(false);
+  const [quickCreateInitialTitle, setQuickCreateInitialTitle] = useState('');
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -537,6 +544,22 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!onDeleteEvent || isDeleting) return;
+
+    try {
+      setIsDeleting(true);
+      await onDeleteEvent();
+      toast.success(`Evento "${event.title}" excluído com sucesso!`);
+      setShowDeleteConfirm(false);
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao excluir evento: ' + (error.message || 'verifique sua conexão.'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleSaveAttendance = async () => {
     try {
       setIsSaving(true);
@@ -598,6 +621,54 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
 
     const newList = [...list, id];
     handleQuickSave({ ...editedEvent, [listName]: newList });
+    setShowAddSongModal(null);
+    setSongSearchQuery('');
+  };
+
+  const startQuickSongCreate = () => {
+    const title = songSearchQuery.trim();
+    if (!title) return;
+
+    setQuickCreateInitialTitle(title);
+    setShowQuickCreateWizard(true);
+  };
+
+  const handleQuickSongCreated = async (song: Song, addToEvent: boolean) => {
+    const targetSection = showAddSongModal;
+
+    if (!addToEvent || !targetSection) {
+      setShowQuickCreateWizard(false);
+      setShowAddSongModal(null);
+      setSongSearchQuery('');
+      return;
+    }
+
+    const listName = targetSection === 'main' ? 'songs' : targetSection === 'offering' ? 'offeringSongs' : 'outroSongs';
+    const list = editedEvent[listName] || [];
+
+    if (list.includes(song.id)) {
+      setShowQuickCreateWizard(false);
+      setShowAddSongModal(null);
+      setSongSearchQuery('');
+      return;
+    }
+
+    const newEvent = { ...editedEvent, [listName]: [...list, song.id] };
+    setEditedEvent(newEvent);
+
+    try {
+      setIsSaving(true);
+      await onUpdate(newEvent);
+      setShowQuickCreateWizard(false);
+      setShowAddSongModal(null);
+      setSongSearchQuery('');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const closeSongPicker = () => {
+    setShowQuickCreateWizard(false);
     setShowAddSongModal(null);
     setSongSearchQuery('');
   };
@@ -1136,19 +1207,29 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
             </>
           ) : (
             <>
+              {canDeleteEvent && (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={isSaving || isDeleting}
+                  className="p-4 bg-red-50 text-red-600 rounded-[2rem] font-bold apple-shadow hover:bg-red-100 transition-all disabled:opacity-50 active:scale-95 border border-red-100/50"
+                  title="Excluir Evento"
+                >
+                  <Trash2 size={24} />
+                </button>
+              )}
               <button
                 onClick={() => {
                   setEditedEvent(cloneEditableEvent(event));
                   setIsEditing(false);
                 }}
-                disabled={isSaving}
+                disabled={isSaving || isDeleting}
                 className="flex-1 px-6 py-4 bg-white text-slate-500 rounded-[2rem] font-bold apple-shadow hover:bg-slate-50 transition-all disabled:opacity-50 active:scale-95 border border-black/5"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => void handleSave()}
-                disabled={isSaving}
+                disabled={isSaving || isDeleting}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 text-white rounded-[2rem] font-bold shadow-2xl hover:opacity-90 transition-all disabled:opacity-50 active:scale-95"
               >
                 {isSaving ? <LoaderCircle size={20} className="animate-spin" /> : <Save size={20} />}
@@ -1380,10 +1461,7 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-bold text-[#00153d]">Selecionar Música</h3>
                   <button 
-                    onClick={() => {
-                      setShowAddSongModal(null);
-                      setSongSearchQuery('');
-                    }} 
+                    onClick={closeSongPicker}
                     className="p-2 hover:bg-slate-100 rounded-full transition-colors"
                   >
                     <X size={24} />
@@ -1423,14 +1501,35 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                 ))}
                 
                 {filteredSongs.length === 0 && (
-                  <div className="py-12 text-center text-slate-400">
+                  <div className="py-12 text-center text-slate-400 flex flex-col items-center">
                     <Music size={40} className="mx-auto mb-4 opacity-20" />
                     <p className="text-sm font-medium">Nenhuma música encontrada</p>
+                    {songSearchQuery.trim() && (
+                      <button
+                        type="button"
+                        onClick={startQuickSongCreate}
+                        className="mt-6 max-w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-[#00153d] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-900/20 hover:opacity-90 transition-all active:scale-95"
+                      >
+                        <Plus size={18} className="shrink-0" />
+                        <span className="min-w-0 whitespace-normal break-words">Cadastrar "{songSearchQuery.trim()}" no repertório</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             </motion.div>
           </div>
+        )}
+
+        {showAddSongModal && (
+          <QuickSongCreateWizard
+            isOpen={showQuickCreateWizard}
+            initialTitle={quickCreateInitialTitle}
+            section={showAddSongModal}
+            onClose={() => setShowQuickCreateWizard(false)}
+            onCreateSong={onCreateSong}
+            onCreated={handleQuickSongCreated}
+          />
         )}
 
         {showAddTeamModal && (
@@ -1711,6 +1810,49 @@ export default function EventDetail({ event, events, songs, team, onBack, onUpda
                     Ao confirmar, você se compromete com este evento
                   </p>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-[#00153d]/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden apple-shadow p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={32} />
+              </div>
+              <h3 className="text-xl font-headline font-extrabold text-[#00153d] mb-2">Excluir Evento?</h3>
+              <p className="text-sm text-slate-500 mb-8">
+                Deseja realmente excluir o evento <span className="font-bold text-slate-700">"{event.title}"</span>? Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-900/20 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Excluindo...</span>
+                    </>
+                  ) : (
+                    <span>Sim, Excluir</span>
+                  )}
+                </button>
               </div>
             </motion.div>
           </div>

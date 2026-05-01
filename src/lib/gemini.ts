@@ -3,6 +3,8 @@ import { GoogleGenAI } from '@google/genai';
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const SONG_INDEX_STORAGE_KEY = 'manancial.aiSongIndex.v3';
+const GEMINI_TIMEOUT_MS = 10000;
+const APPLE_MUSIC_TIMEOUT_MS = 3500;
 
 if (!apiKey) {
   console.warn('VITE_GEMINI_API_KEY não encontrada no ambiente.');
@@ -26,6 +28,12 @@ export interface SongSuggestionResult {
   title: string;
   artist: string;
   cover_url?: string;
+}
+
+export interface SongMatchSearchParams {
+  title: string;
+  artist?: string;
+  lyricsSnippet?: string;
 }
 
 type RawEnrichedSongData = Partial<Record<keyof EnrichedSongData, unknown>>;
@@ -101,6 +109,17 @@ function asText(value: unknown): string | undefined {
 function asNumber(value: unknown): number | undefined {
   const numberValue = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  return Promise.race([
+    promise.finally(() => globalThis.clearTimeout(timeoutId)),
+    new Promise<T>((_, reject) => {
+      timeoutId = globalThis.setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]);
 }
 
 function normalizeDifficulty(value: unknown) {
@@ -183,6 +202,27 @@ function normalizeOptionalUrl(value: unknown) {
   }
 
   return undefined;
+}
+
+function normalizeCoverCandidate(value: unknown) {
+  const url = normalizeOptionalUrl(value);
+  if (!url) return undefined;
+
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, '');
+    const pathname = parsed.pathname.toLowerCase();
+    const isLikelyImage =
+      hostname.includes('mzstatic.com') ||
+      hostname.includes('ytimg.com') ||
+      hostname.includes('img.youtube.com') ||
+      hostname.includes('googleusercontent.com') ||
+      /\.(jpe?g|png|webp)(?:$|[?#])/i.test(pathname);
+
+    return isLikelyImage ? parsed.toString() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildSearchUrl(baseUrl: string, query: string) {
@@ -378,8 +418,16 @@ async function fetchAppleMusicResults(query: string, limit: number): Promise<App
     country: 'BR',
     limit: String(limit),
   });
-  const response = await fetch(`https://itunes.apple.com/search?${params.toString()}`);
-  if (!response.ok) return [];
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), APPLE_MUSIC_TIMEOUT_MS);
+
+  const response = await fetch(`https://itunes.apple.com/search?${params.toString()}`, {
+    signal: controller.signal,
+  }).finally(() => globalThis.clearTimeout(timeoutId));
+
+  if (!response.ok) {
+    return [];
+  }
 
   const data = (await response.json()) as { results?: AppleMusicResult[] };
   return data.results ?? [];
@@ -408,16 +456,20 @@ async function searchAppleMusicSuggestions(query: string): Promise<SongSuggestio
 async function generateJson(prompt: string, useGoogleSearch: boolean) {
   if (!genai) return null;
 
-  const response = await genai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    config: {
-      temperature: 0.2,
-      ...(useGoogleSearch
-        ? { tools: [{ googleSearch: {} }] }
-        : { responseMimeType: 'application/json' }),
-    },
-  });
+  const response = await withTimeout(
+    genai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0.2,
+        ...(useGoogleSearch
+          ? { tools: [{ googleSearch: {} }] }
+          : { responseMimeType: 'application/json' }),
+      },
+    }),
+    GEMINI_TIMEOUT_MS,
+    'Tempo esgotado ao consultar Gemini.'
+  );
 
   return response.text ?? null;
 }
@@ -447,7 +499,7 @@ function normalizeSongSuggestions(raw: unknown): SongSuggestionResult[] {
         artist,
       };
 
-      const coverUrl = asText(item.cover_url);
+      const coverUrl = normalizeCoverCandidate(item.cover_url);
       if (coverUrl) suggestion.cover_url = coverUrl;
 
       return suggestion;
@@ -506,6 +558,71 @@ Importante:
 - Retorne apenas o array JSON, sem textos explicativos.
 `;
 
+function buildContextualSearchPrompt({ title, artist, lyricsSnippet }: SongMatchSearchParams) {
+  const context = [
+    `Título pesquisado: "${title}"`,
+    artist ? `Artista informado: "${artist}"` : null,
+    lyricsSnippet ? `Trecho informado: "${lyricsSnippet}"` : null,
+  ].filter(Boolean).join('\n');
+
+  return `
+Você é um catálogo de música cristã, louvor e adoração.
+Encontre as correspondências mais prováveis para a música abaixo.
+
+${context}
+
+Use o título como sinal principal. Use artista e trecho apenas para desambiguar versões parecidas.
+Retorne até 8 opções, as mais prováveis primeiro.
+
+Retorne EXATAMENTE um array JSON com objetos no formato:
+[
+  {
+    "title": "Título Correto",
+    "artist": "Nome do Artista/Ministério",
+    "cover_url": "URL da capa do álbum (se encontrar)"
+  }
+]
+
+Importante:
+- Se o trecho apontar para uma versão específica, priorize essa versão.
+- Se não tiver certeza absoluta do artista, sugira o mais provável.
+- Retorne apenas o array JSON, sem textos explicativos.
+`;
+}
+
+export async function searchSongMatches(params: SongMatchSearchParams): Promise<SongSuggestionResult[]> {
+  const title = params.title.trim();
+  const artist = params.artist?.trim();
+  const lyricsSnippet = params.lyricsSnippet?.trim();
+
+  if (title.length < 3) return [];
+
+  const baseQuery = [title, artist].filter(Boolean).join(' ');
+  const baseSuggestionsPromise = searchSongs(baseQuery).catch(() => []);
+
+  if (!genai || (!artist && !lyricsSnippet)) {
+    return enrichSongSuggestionCovers(await baseSuggestionsPromise);
+  }
+
+  const contextualSuggestionsPromise = (async () => {
+    const prompt = buildContextualSearchPrompt({ title, artist, lyricsSnippet });
+    const raw =
+      parseJson<unknown>(await generateJson(prompt, true)) ??
+      parseJson<unknown>(await generateJson(prompt, false));
+    return normalizeSongSuggestions(raw);
+  })().catch((error) => {
+    console.warn('Gemini falhou na busca contextual, usando busca simples:', error);
+    return [] as SongSuggestionResult[];
+  });
+
+  const [baseSuggestions, contextualSuggestions] = await Promise.all([
+    baseSuggestionsPromise,
+    contextualSuggestionsPromise,
+  ]);
+
+  return enrichSongSuggestionCovers(mergeSongSuggestions([...contextualSuggestions, ...baseSuggestions]));
+}
+
 export async function searchSongs(query: string): Promise<SongSuggestionResult[]> {
   if (query.length < 3) return [];
 
@@ -520,7 +637,7 @@ export async function searchSongs(query: string): Promise<SongSuggestionResult[]
 
     const appleSuggestions = await applePromise;
 
-    if (!genai) return mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions]);
+    if (!genai) return enrichSongSuggestionCovers(mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions]));
 
     let aiRaw = null;
     try {
@@ -530,10 +647,10 @@ export async function searchSongs(query: string): Promise<SongSuggestionResult[]
       console.warn('Gemini falhou na busca, usando Apple Music:', aiError);
     }
 
-    if (!aiRaw) return mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions]);
+    if (!aiRaw) return enrichSongSuggestionCovers(mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions]));
 
     const aiSuggestions = normalizeSongSuggestions(aiRaw);
-    return mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions, ...aiSuggestions]);
+    return enrichSongSuggestionCovers(mergeSongSuggestions([...cachedSuggestions, ...appleSuggestions, ...aiSuggestions]));
   } catch (error) {
     console.error('Erro crítico ao buscar sugestões:', error);
     return [];
@@ -541,14 +658,62 @@ export async function searchSongs(query: string): Promise<SongSuggestionResult[]
 }
 
 function mergeSongSuggestions(suggestions: SongSuggestionResult[]) {
-  const seen = new Set<string>();
+  const merged = new Map<string, SongSuggestionResult>();
 
-  return suggestions
-    .filter((song) => {
-      const key = normalizeLookupKey(song.title, song.artist);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+  for (const song of suggestions) {
+    const key = normalizeLookupKey(song.title, song.artist);
+    const coverUrl = normalizeCoverCandidate(song.cover_url);
+    const existing = merged.get(key);
+
+    if (!existing) {
+      merged.set(key, {
+        ...song,
+        ...(coverUrl ? { cover_url: coverUrl } : {}),
+      });
+      continue;
+    }
+
+    if (!existing.cover_url && coverUrl) {
+      merged.set(key, { ...existing, cover_url: coverUrl });
+    }
+  }
+
+  return Array.from(merged.values()).slice(0, 8);
+}
+
+async function enrichSongSuggestionCovers(suggestions: SongSuggestionResult[]) {
+  return Promise.all(
+    suggestions.map(async (suggestion) => {
+      if (normalizeCoverCandidate(suggestion.cover_url)) {
+        return suggestion;
+      }
+
+      const appleCoverUrl = await findAppleArtworkForSuggestion(suggestion);
+      return appleCoverUrl ? { ...suggestion, cover_url: appleCoverUrl } : suggestion;
     })
-    .slice(0, 8);
+  );
+}
+
+async function findAppleArtworkForSuggestion(suggestion: SongSuggestionResult) {
+  try {
+    const results = await fetchAppleMusicResults(`${suggestion.title} ${suggestion.artist}`, 5);
+    const suggestionTitle = slugify(suggestion.title);
+    const suggestionArtist = slugify(getPrimaryArtistName(suggestion.artist));
+
+    const exactMatch = results.find((result) => {
+      if (!result.trackName || !result.artistName || !result.artworkUrl100) return false;
+
+      const resultTitle = slugify(result.trackName);
+      const resultArtist = slugify(getPrimaryArtistName(result.artistName));
+      const titleMatches = resultTitle.includes(suggestionTitle) || suggestionTitle.includes(resultTitle);
+      const artistMatches = resultArtist.includes(suggestionArtist) || suggestionArtist.includes(resultArtist);
+
+      return titleMatches && artistMatches;
+    });
+
+    const artwork = exactMatch?.artworkUrl100 ?? results.find((result) => result.artworkUrl100)?.artworkUrl100;
+    return artwork ? toLargeAppleArtwork(artwork) : undefined;
+  } catch {
+    return undefined;
+  }
 }

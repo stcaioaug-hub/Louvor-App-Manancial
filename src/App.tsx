@@ -125,7 +125,10 @@ interface EventDetailRouteProps {
   navigate: ReturnType<typeof useNavigate>;
   onUpdateEvent: (event: WorshipEvent) => Promise<void>;
   onUpdateSong: (song: Song) => Promise<void>;
+  onCreateSong: (song: Omit<Song, 'id'>) => Promise<Song>;
+  onDeleteEvent: (id: string) => Promise<void>;
   isMinister: boolean;
+  canDeleteEvent: boolean;
   effectiveProfile: Profile | null;
   isSidebarHidden: boolean;
   userSongStudy: UserSongStudy[];
@@ -140,7 +143,10 @@ function EventDetailRoute({
   navigate,
   onUpdateEvent,
   onUpdateSong,
+  onCreateSong,
+  onDeleteEvent,
   isMinister,
+  canDeleteEvent,
   effectiveProfile,
   isSidebarHidden,
   userSongStudy,
@@ -160,9 +166,12 @@ function EventDetailRoute({
       onBack={() => navigate('/app/schedule')}
       onUpdate={onUpdateEvent}
       onUpdateSong={onUpdateSong}
+      onCreateSong={onCreateSong}
       onSelectSong={(id) => navigate(`/app/repertoire/${id}`)}
       onSelectEvent={(id) => navigate(`/app/events/${id}`)}
+      onDeleteEvent={() => onDeleteEvent(event.id)}
       canEdit={isMinister}
+      canDeleteEvent={canDeleteEvent}
       userProfile={effectiveProfile}
       isSidebarHidden={isSidebarHidden}
       userSongStudy={userSongStudy}
@@ -445,6 +454,7 @@ export default function App() {
       setErrorMessage(null);
       const createdSong = await createSong(song);
       setSongs((previous) => appDataSorters.songs([...previous, createdSong]));
+      return createdSong;
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
       throw error;
@@ -628,7 +638,7 @@ export default function App() {
 
   const effectiveProfile = profile ?? (isLocalMode ? localProfile : null);
   const isMinister = isLocalMode || effectiveProfile?.role === 'minister' || effectiveProfile?.role === 'pastor';
-  const canDeleteEvent = isLocalMode || ['Caio', 'Silvia', 'Pastor Sidney'].includes(effectiveProfile?.name || '');
+  const canDeleteEvent = isLocalMode || ['Caio', 'Caio Augusto ', 'Silvia', 'Pastor Sidney', 'Pr Sidney'].includes(effectiveProfile?.name || '');
 
   const renderContent = () => {
     return (
@@ -704,7 +714,10 @@ export default function App() {
             navigate={navigate}
             onUpdateEvent={handleUpdateEvent}
             onUpdateSong={handleUpdateSong}
+            onCreateSong={handleCreateSong}
+            onDeleteEvent={handleDeleteEvent}
             isMinister={isMinister}
+            canDeleteEvent={canDeleteEvent}
             effectiveProfile={effectiveProfile}
             isSidebarHidden={isSidebarHidden}
             userSongStudy={userSongStudy}

@@ -13,7 +13,7 @@ interface SongSuggestionsProps {
   suggestions: SongSuggestion[];
   userProfile: Profile | null;
   onBack: () => void;
-  onCreateSong: (song: Omit<Song, 'id'>) => Promise<void>;
+  onCreateSong: (song: Omit<Song, 'id'>) => Promise<Song>;
   onSuggestionCreated: (suggestion: SongSuggestion) => void;
   onSuggestionUpdated: (id: string, updates: Partial<SongSuggestion>) => void;
 }

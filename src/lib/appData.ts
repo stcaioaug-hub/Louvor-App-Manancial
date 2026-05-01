@@ -132,14 +132,22 @@ interface AppData {
 export type AppDataSubscription = RealtimeChannel | null;
 
 const REQUEST_TIMEOUT = 15000; // 15 seconds
+const SONG_WRITE_TIMEOUT = 25000;
+const DELETE_EVENT_TIMEOUT = 30000; // Deleting can fan out through FK cascades.
 
-const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = REQUEST_TIMEOUT): Promise<T> => {
+const withTimeout = <T>(
+  promise: PromiseLike<T>,
+  timeoutMs: number = REQUEST_TIMEOUT,
+  timeoutMessage = 'Tempo de resposta excedido. Verifique sua conexão.'
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
   return Promise.race([
     Promise.resolve(promise),
-    new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Tempo de resposta excedido. Verifique sua conexão.')), timeoutMs)
-    )
-  ]);
+    new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timeoutId));
 };
 
 function assertNoError(error: { message: string, code?: string } | null) {
@@ -159,6 +167,10 @@ function isMissingColumnError(error: { message?: string } | null, columnName: st
     message.includes('schema cache') ||
     message.includes('could not find')
   );
+}
+
+function isForeignKeyViolation(error: { message?: string; code?: string } | null) {
+  return error?.code === '23503' || !!error?.message?.toLowerCase().includes('foreign key');
 }
 
 function cloneSong(song: Song): Song {
@@ -560,20 +572,12 @@ export async function fetchAppData(): Promise<AppData> {
 
 export async function createSong(song: SongDraft): Promise<Song> {
   if (!isConfigured) {
-    const createdSong: Song = {
+    const createdSong: Song = cloneSong({
       id: createLocalId('song'),
-      title: song.title,
-      artist: song.artist,
-      bpm: song.bpm,
-      key: song.key,
-      proficiency: song.proficiency,
-      difficulty: song.difficulty,
-      isFavorite: song.isFavorite,
+      ...song,
       tags: [...song.tags],
-      lastPlayed: song.lastPlayed,
       links: { ...song.links },
-      cover_url: song.cover_url,
-    };
+    });
 
     localData = {
       ...localData,
@@ -584,15 +588,27 @@ export async function createSong(song: SongDraft): Promise<Song> {
   }
 
   const songRow = mapSongToRow(song);
-  let result = await supabase.from('songs').insert(songRow).select('*').single();
+  let result = await withTimeout(
+    supabase.from('songs').insert(songRow).select('*').single(),
+    SONG_WRITE_TIMEOUT,
+    'Tempo de resposta excedido ao salvar música. Verifique sua conexão e tente novamente.'
+  );
 
   if (result.error && isMissingColumnError(result.error, 'cover_url')) {
     const { cover_url: _coverUrl, ...songRowWithoutCover } = songRow;
-    result = await supabase.from('songs').insert(songRowWithoutCover).select('*').single();
+    result = await withTimeout(
+      supabase.from('songs').insert(songRowWithoutCover).select('*').single(),
+      SONG_WRITE_TIMEOUT,
+      'Tempo de resposta excedido ao salvar música. Verifique sua conexão e tente novamente.'
+    );
   }
 
   assertNoError(result.error);
-  return mapSongRow(result.data as SongRow);
+  const createdSong = mapSongRow(result.data as SongRow);
+  return cloneSong({
+    ...createdSong,
+    cover_url: createdSong.cover_url ?? song.cover_url,
+  });
 }
 
 export async function updateSong(song: Song): Promise<Song> {
@@ -608,11 +624,19 @@ export async function updateSong(song: Song): Promise<Song> {
   }
 
   const songRow = mapSongToRow(song);
-  let result = await supabase.from('songs').update(songRow).eq('id', song.id);
+  let result = await withTimeout(
+    supabase.from('songs').update(songRow).eq('id', song.id),
+    SONG_WRITE_TIMEOUT,
+    'Tempo de resposta excedido ao atualizar música. Verifique sua conexão e tente novamente.'
+  );
 
   if (result.error && isMissingColumnError(result.error, 'cover_url')) {
     const { cover_url: _coverUrl, ...songRowWithoutCover } = songRow;
-    result = await supabase.from('songs').update(songRowWithoutCover).eq('id', song.id);
+    result = await withTimeout(
+      supabase.from('songs').update(songRowWithoutCover).eq('id', song.id),
+      SONG_WRITE_TIMEOUT,
+      'Tempo de resposta excedido ao atualizar música. Verifique sua conexão e tente novamente.'
+    );
   }
 
   assertNoError(result.error);
@@ -762,16 +786,52 @@ export async function deleteEvent(id: string): Promise<void> {
     return;
   }
 
-  const junctionResult = await withTimeout(supabase.from('event_songs').delete().eq('event_id', id));
-  assertNoError(junctionResult.error);
+  const deleteEventById = () =>
+    withTimeout(
+      supabase
+        .from('worship_events')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle(),
+      DELETE_EVENT_TIMEOUT,
+      'Tempo de resposta excedido ao excluir evento. Verifique sua conexão e tente novamente.'
+    );
 
-  const reportsResult = await withTimeout(supabase.from('rehearsal_reports').update({ event_id: null }).eq('event_id', id));
-  if (reportsResult.error) {
-    console.warn('Failed to clear event_id from rehearsal reports', reportsResult.error);
+  let result = await deleteEventById();
+
+  if (isForeignKeyViolation(result.error)) {
+    const junctionResult = await withTimeout(
+      supabase.from('event_songs').delete().eq('event_id', id),
+      REQUEST_TIMEOUT,
+      'Tempo de resposta excedido ao liberar o repertório vinculado ao evento.'
+    );
+    assertNoError(junctionResult.error);
+
+    const reportsResult = await withTimeout(
+      supabase.from('rehearsal_reports').update({ event_id: null }).eq('event_id', id),
+      REQUEST_TIMEOUT,
+      'Tempo de resposta excedido ao liberar relatórios vinculados ao evento.'
+    );
+    assertNoError(reportsResult.error);
+    result = await deleteEventById();
+  } else {
+    void supabase
+      .from('rehearsal_reports')
+      .update({ event_id: null })
+      .eq('event_id', id)
+      .then(({ error }) => {
+        if (error) {
+          console.warn('Failed to clear event_id from rehearsal reports', error);
+        }
+      });
   }
 
-  const result = await withTimeout(supabase.from('worship_events').delete().eq('id', id));
   assertNoError(result.error);
+
+  if (!result.data) {
+    throw new Error('Você não tem permissão para excluir este evento ou ele já foi excluído.');
+  }
 }
 
 export async function updateEvent(event: WorshipEvent): Promise<WorshipEvent> {

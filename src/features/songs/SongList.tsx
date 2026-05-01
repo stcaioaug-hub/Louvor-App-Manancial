@@ -16,7 +16,7 @@ import { SongEditorModal, createEmptySong } from './SongEditorModal';
 interface SongListProps {
   songs: Song[];
   events: WorshipEvent[];
-  onCreateSong: (song: Omit<Song, 'id'>) => Promise<void>;
+  onCreateSong: (song: Omit<Song, 'id'>) => Promise<Song>;
   onUpdateSong: (song: Song) => Promise<void>;
   onDeleteSong: (id: string) => Promise<void>;
   onSelectSong: (id: string) => void;

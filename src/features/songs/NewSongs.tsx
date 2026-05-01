@@ -32,7 +32,7 @@ interface NewSongsProps {
   onSelectSong: (id: string) => void;
   onBack: () => void;
   onSuggestionCreated: (suggestion: SongSuggestion) => void;
-  onCreateSong: (song: Omit<Song, 'id'>) => Promise<void>;
+  onCreateSong: (song: Omit<Song, 'id'>) => Promise<Song>;
   onGoToStudy: () => void;
 }
 
