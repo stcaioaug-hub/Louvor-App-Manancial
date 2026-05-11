@@ -27,6 +27,8 @@ import { OnboardingWizard } from './features/auth/OnboardingWizard';
 import NewSongs from './features/songs/NewSongs';
 import SongSuggestions from './features/songs/SongSuggestions';
 import StudyHub from './features/study/StudyHub';
+import EvaluationWizard from './features/evaluations/EvaluationWizard';
+import EvaluationsDashboard from './features/evaluations/EvaluationsDashboard';
 import { supabase } from './lib/supabase';
 import { getProfile, signOut } from './lib/auth';
 import {
@@ -52,7 +54,7 @@ import {
   updateStudySongStatus,
 } from './lib/appData';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
-import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from './types';
+import { Song, TeamMember, WorshipEvent, Profile, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy, TeamEvaluation } from './types';
 import { User } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
 
@@ -221,6 +223,7 @@ export default function App() {
   const [songSuggestions, setSongSuggestions] = useState<SongSuggestion[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [userSongStudy, setUserSongStudy] = useState<UserSongStudy[]>([]);
+  const [teamEvaluations, setTeamEvaluations] = useState<TeamEvaluation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
@@ -254,6 +257,7 @@ export default function App() {
     songSuggestions: SongSuggestion[];
     notifications: AppNotification[];
     userSongStudy: UserSongStudy[];
+    teamEvaluations: TeamEvaluation[];
   }) => {
     startTransition(() => {
       setSongs(data.songs);
@@ -263,6 +267,7 @@ export default function App() {
       setSongSuggestions(data.songSuggestions || []);
       setNotifications(data.notifications || []);
       setUserSongStudy(data.userSongStudy || []);
+      setTeamEvaluations(data.teamEvaluations || []);
     });
   });
 
@@ -439,7 +444,7 @@ export default function App() {
   useEffect(() => {
     if (isAuthLoading) return;
     if (!isLocalMode) {
-      if (!user && location.pathname !== '/login') {
+      if (!user && location.pathname !== '/login' && location.pathname !== '/avaliacao') {
         navigate('/login', { replace: true });
       } else if (user && profile && !profile.onboarding_completed && location.pathname !== '/onboarding') {
         navigate('/onboarding', { replace: true });
@@ -648,6 +653,8 @@ export default function App() {
         <Route path="/login" element={<Login onLogin={() => void loadData({ withLoading: true })} />} />
         <Route path="/onboarding" element={profile ? <OnboardingWizard profile={profile} onComplete={setProfile} /> : <Navigate to="/login" replace />} />
         
+        <Route path="/avaliacao" element={<EvaluationWizard />} />
+        
         <Route path="/app/dashboard" element={
           <Dashboard
             setActiveTab={(id) => navigate(`/app/${id}`)}
@@ -824,12 +831,21 @@ export default function App() {
           />
         } />
         
+        <Route path="/app/avaliacoes" element={
+          <EvaluationsDashboard
+            evaluations={teamEvaluations}
+            team={team}
+            onBack={() => navigate('/app/dashboard')}
+            canEdit={isMinister}
+          />
+        } />
+        
         <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
       </Routes>
     );
   };
 
-  const isAuthRoute = location.pathname === '/login' || location.pathname === '/onboarding';
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/onboarding' || location.pathname === '/avaliacao';
   const pullToRefresh = usePullToRefresh({
     enabled: !isAuthRoute && !isLoading && !isAuthLoading,
     canRefresh: !isPullRefreshBlocked,

@@ -10,7 +10,8 @@ import {
   Music2,
   Calendar,
   Users,
-  BookOpen
+  BookOpen,
+  Star
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -88,6 +89,7 @@ export default function Sidebar({
     { id: 'repertoire', label: 'Repertório', icon: Music2 },
     { id: 'schedule', label: 'Programação', icon: Calendar },
     { id: 'team', label: 'Equipe', icon: Users },
+    { id: 'avaliacoes', label: 'Avaliações', icon: Star },
   ];
 
   return (

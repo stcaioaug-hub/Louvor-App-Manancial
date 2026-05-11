@@ -305,6 +305,7 @@ export default function Dashboard({ setActiveTab, songs, team, events, rehearsal
     { id: 'repertoire', label: 'Repertório', desc: 'Gerenciar louvores', icon: Music, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
     { id: 'team', label: 'Equipe', desc: 'Membros e perfis', icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-200' },
     { id: 'schedule', label: 'Agenda', desc: 'Cultos e ensaios', icon: CalendarIcon, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+    { id: 'avaliacoes', label: 'Avaliações', desc: 'Resultados da equipe', icon: Star, color: 'text-pink-600', bg: 'bg-pink-50', border: 'border-pink-200' },
     { id: 'study', label: 'Estudo', desc: 'Meu aprendizado', icon: BookOpen, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
     { id: 'suggestions', label: 'Sugestões', desc: 'Ideias de louvores', icon: Lightbulb, color: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-200' },
     { id: 'insights', label: 'Estatísticas', desc: 'Dados e métricas', icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200' },

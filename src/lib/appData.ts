@@ -1,5 +1,5 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { Song, TeamMember, WorshipEvent, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy } from '../types';
+import { Song, TeamMember, WorshipEvent, RehearsalReport, SongSuggestion, AppNotification, UserSongStudy, TeamEvaluation } from '../types';
 import { isConfigured, supabase, supabaseConfigMessage } from './supabase';
 import { INITIAL_EVENTS, INITIAL_SONGS, INITIAL_TEAM } from './seedData';
 import { applySongCatalog, applySongCatalogToList } from './songCatalog';
@@ -127,6 +127,7 @@ interface AppData {
   songSuggestions: SongSuggestion[];
   notifications: AppNotification[];
   userSongStudy: UserSongStudy[];
+  teamEvaluations: TeamEvaluation[];
 }
 
 export type AppDataSubscription = RealtimeChannel | null;
@@ -217,6 +218,7 @@ function cloneAppData(data: AppData): AppData {
     songSuggestions: [...(data.songSuggestions || [])],
     notifications: [...(data.notifications || [])],
     userSongStudy: [...(data.userSongStudy || [])],
+    teamEvaluations: [...(data.teamEvaluations || [])],
   };
 }
 
@@ -422,6 +424,7 @@ function createInitialLocalData(): AppData {
     songSuggestions: [],
     notifications: [],
     userSongStudy: [],
+    teamEvaluations: [],
   };
 }
 
@@ -447,7 +450,7 @@ export async function fetchAppData(): Promise<AppData> {
     };
   }
 
-  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult, suggestionsResult, notificationsResult, readResult, studyResult] = await withTimeout(Promise.all([
+  const [songsResult, teamResult, eventsResult, eventSongsResult, reportsResult, suggestionsResult, notificationsResult, readResult, studyResult, evalsResult] = await withTimeout(Promise.all([
     supabase.from('songs').select('*').order('title', { ascending: true }),
     supabase.from('team_members').select('*').order('name', { ascending: true }),
     supabase.from('worship_events').select('*').order('date', { ascending: true }).order('time', { ascending: true }),
@@ -457,6 +460,7 @@ export async function fetchAppData(): Promise<AppData> {
     supabase.from('app_notifications').select('*').order('created_at', { ascending: false }),
     supabase.from('user_notifications_read').select('*'),
     supabase.from('user_song_study').select('*'),
+    supabase.from('team_evaluations').select('*').order('created_at', { ascending: false }),
   ]));
 
   assertNoError(songsResult.error);
@@ -467,6 +471,7 @@ export async function fetchAppData(): Promise<AppData> {
   assertNoError(notificationsResult.error);
   assertNoError(readResult.error);
   assertNoError(studyResult.error);
+  assertNoError(evalsResult.error);
 
   const songs = sortSongs((songsResult.data ?? []).map((row) => applySongCatalog(mapSongRow(row as SongRow))));
   const team = sortTeam((teamResult.data ?? []).map((row) => mapTeamMemberRow(row as TeamMemberRow)));
@@ -567,7 +572,9 @@ export async function fetchAppData(): Promise<AppData> {
     created_at: row.created_at,
   }));
 
-  return { songs, team, events, rehearsalReports, songSuggestions, notifications, userSongStudy };
+  const teamEvaluations = (evalsResult.data ?? []) as TeamEvaluation[];
+
+  return { songs, team, events, rehearsalReports, songSuggestions, notifications, userSongStudy, teamEvaluations };
 }
 
 export async function createSong(song: SongDraft): Promise<Song> {
@@ -1249,3 +1256,63 @@ export const appDataSorters = {
   team: sortTeam,
   events: sortEvents,
 };
+
+export async function createTeamEvaluation(evaluation: Omit<TeamEvaluation, 'id' | 'created_at'>): Promise<TeamEvaluation> {
+  if (!isConfigured) {
+    const newEval = {
+      ...evaluation,
+      id: createLocalId('eval'),
+      created_at: new Date().toISOString()
+    };
+    localData = {
+      ...localData,
+      teamEvaluations: [newEval, ...localData.teamEvaluations]
+    };
+    return newEval;
+  }
+
+  const { data, error } = await supabase
+    .from('team_evaluations')
+    .insert([evaluation])
+    .select()
+    .single();
+
+  assertNoError(error);
+  return data as TeamEvaluation;
+}
+
+export async function linkTeamEvaluationToMember(evaluationId: string, memberId: string | null): Promise<void> {
+  if (!isConfigured) {
+    localData = {
+      ...localData,
+      teamEvaluations: localData.teamEvaluations.map(ev => 
+        ev.id === evaluationId ? { ...ev, team_member_id: memberId || undefined } : ev
+      )
+    };
+    return;
+  }
+
+  const { error } = await supabase
+    .from('team_evaluations')
+    .update({ team_member_id: memberId })
+    .eq('id', evaluationId);
+
+  assertNoError(error);
+}
+
+export async function deleteTeamEvaluation(evaluationId: string): Promise<void> {
+  if (!isConfigured) {
+    localData = {
+      ...localData,
+      teamEvaluations: localData.teamEvaluations.filter(ev => ev.id !== evaluationId)
+    };
+    return;
+  }
+
+  const { error } = await supabase
+    .from('team_evaluations')
+    .delete()
+    .eq('id', evaluationId);
+
+  assertNoError(error);
+}

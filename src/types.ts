@@ -153,3 +153,23 @@ export interface UserSongStudy {
   is_completed: boolean;
   created_at: string;
 }
+
+export interface TeamEvaluation {
+  id: string;
+  member_name: string;
+  member_role: string;
+  q1_uniao: number;
+  q2_comprometimento: number;
+  q3_espiritual: number;
+  q4_organizacao: number;
+  q5_comunicacao: number;
+  q6_humildade: number;
+  q7_excelencia: number;
+  q8_pontualidade: number;
+  q9_participacao: number;
+  q10_ambiente: number;
+  open_feedback: string;
+  total_score: number;
+  team_member_id?: string;
+  created_at?: string;
+}
