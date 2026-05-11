@@ -1271,14 +1271,18 @@ export async function createTeamEvaluation(evaluation: Omit<TeamEvaluation, 'id'
     return newEval;
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('team_evaluations')
-    .insert([evaluation])
-    .select()
-    .single();
+    .insert([evaluation]);
 
   assertNoError(error);
-  return data as TeamEvaluation;
+  
+  // Return a mock object since we can't select the inserted row as anonymous user
+  return {
+    ...evaluation,
+    id: 'submitted',
+    created_at: new Date().toISOString()
+  } as TeamEvaluation;
 }
 
 export async function linkTeamEvaluationToMember(evaluationId: string, memberId: string | null): Promise<void> {

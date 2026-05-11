@@ -5,6 +5,8 @@ import { BackButton } from '../../components/BackButton';
 import type { TeamEvaluation, TeamMember } from '../../types';
 import { linkTeamEvaluationToMember, deleteTeamEvaluation } from '../../lib/appData';
 import toast from 'react-hot-toast';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Props {
   evaluations: TeamEvaluation[];
@@ -52,7 +54,85 @@ export default function EvaluationsDashboard({ evaluations, team, onBack, canEdi
   };
 
   const handlePrint = () => {
-    window.print();
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text('Relatório de Avaliação da Equipe', 14, 22);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
+    
+    // Summary
+    doc.setFontSize(14);
+    doc.setTextColor(20);
+    doc.text('Resumo Geral', 14, 45);
+    
+    autoTable(doc, {
+      startY: 50,
+      head: [['Total de Respostas', 'Média Geral (0-50)', 'Diagnóstico']],
+      body: [
+        [evaluations.length.toString(), avgScore.toString(), teamDiagnostic.label]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [0, 21, 61] },
+    });
+
+    // Calculate averages per topic
+    const getAvg = (key: keyof TeamEvaluation) => {
+      if (evaluations.length === 0) return 0;
+      const sum = evaluations.reduce((acc, ev) => acc + (ev[key] as number || 0), 0);
+      return (sum / evaluations.length).toFixed(1);
+    };
+
+    doc.text('Médias por Tópico (0-5)', 14, (doc as any).lastAutoTable.finalY + 15);
+    
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 20,
+      head: [['Critério', 'Média']],
+      body: [
+        ['União e Companheirismo', getAvg('q1_uniao')],
+        ['Comprometimento (Ensaios)', getAvg('q2_comprometimento')],
+        ['Vida Espiritual', getAvg('q3_espiritual')],
+        ['Organização', getAvg('q4_organizacao')],
+        ['Comunicação', getAvg('q5_comunicacao')],
+        ['Humildade/Recepção a Críticas', getAvg('q6_humildade')],
+        ['Excelência Musical', getAvg('q7_excelencia')],
+        ['Pontualidade', getAvg('q8_pontualidade')],
+        ['Participação na Igreja', getAvg('q9_participacao')],
+        ['Ambiente dos Ensaios', getAvg('q10_ambiente')],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [0, 21, 61] },
+    });
+
+    // Open Feedbacks
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setTextColor(20);
+    doc.text('Feedbacks Abertos (O que melhorar imediatamente)', 14, 20);
+
+    const feedbackBody = evaluations
+      .filter(ev => ev.open_feedback && ev.open_feedback.trim().length > 0)
+      .map(ev => [ev.member_name || 'Anônimo', ev.open_feedback]);
+
+    if (feedbackBody.length > 0) {
+      autoTable(doc, {
+        startY: 25,
+        head: [['Membro', 'Feedback']],
+        body: feedbackBody,
+        theme: 'plain',
+        styles: { cellPadding: 5 },
+        columnStyles: {
+          0: { cellWidth: 40, fontStyle: 'bold' },
+          1: { cellWidth: 'auto' }
+        },
+      });
+    }
+
+    doc.save('Avaliacao_Ministerio.pdf');
+    toast.success('PDF gerado com sucesso!');
   };
 
   const handleCopyLink = () => {
