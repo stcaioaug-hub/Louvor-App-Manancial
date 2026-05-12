@@ -1135,6 +1135,7 @@ export function subscribeToAppData(onChange: () => void): AppDataSubscription {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'song_suggestions' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'app_notifications' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'user_song_study' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_evaluations' }, onChange)
     .subscribe();
 }
 
